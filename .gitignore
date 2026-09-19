@@ -1,0 +1,16 @@
+# Build outputs
+**/bin/
+**/obj/
+**/publish/
+RazerLite.exe
+
+# IDE / OS
+.vs/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+
+# Local crash dumps (if ever copied into the repo)
+crash.log
+*.log
