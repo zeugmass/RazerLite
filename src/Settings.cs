@@ -21,6 +21,7 @@ public sealed class Settings
     public List<Profile> Profiles { get; set; } = new();
     public bool MinimizeToTray { get; set; } = true;
     public bool StartWithWindows { get; set; }
+    public bool ShowDebugLog { get; set; } = true;
 
     [JsonIgnore]
     public static string Directory =>

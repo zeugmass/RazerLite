@@ -32,6 +32,8 @@ public partial class MainWindow : Window
     private Protocol.BatteryInfo? _lastBattery;
     private bool _needsFullRead;      // son cihaz okumasi eksik kaldi; fare yanit verince tamamla
     private bool _batteryBusyLogged;  // arka plan pil okumasinda BUSY spam'ini onle
+    private bool _forceReconnect;     // uyku/uyanma sonrasi handle olmus olabilir; path ayni olsa bile yeniden ac
+    private int _resumeRetries;       // uyanma sonrasi cihaz henuz yoksa kac kez daha denenecek
 
     private static readonly Brush GreenBrush = new SolidColorBrush(Color.FromRgb(0x44, 0xD6, 0x2C));
     private static readonly Brush AmberBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xB0, 0x40));
@@ -277,13 +279,18 @@ public partial class MainWindow : Window
     }
 
     // ------------------------------------------------------------------
-    // USB tak/cikar izleme (kablolu <-> kablosuz gecisi)
+    // USB tak/cikar + uyku/uyanma izleme
     // ------------------------------------------------------------------
 
     private const int WmDeviceChange = 0x0219;
+    private const int WmPowerBroadcast = 0x0218;
     private const int DbtDevNodesChanged = 0x0007;
     private const int DbtDeviceArrival = 0x8000;
     private const int DbtDeviceRemoveComplete = 0x8004;
+    private const int PbtApmSuspend = 0x0004;
+    private const int PbtApmResumeCritical = 0x0006;
+    private const int PbtApmResumeSuspend = 0x0007;
+    private const int PbtApmResumeAutomatic = 0x0012;
 
     private void InitDeviceWatcher()
     {
@@ -294,22 +301,62 @@ public partial class MainWindow : Window
 
     private IntPtr DeviceChangeHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
+        if (msg == WmPowerBroadcast)
+        {
+            int ev = wParam.ToInt32();
+            if (ev == PbtApmSuspend)
+            {
+                // Uykuya girerken handle'i hemen birak; uyaninca taze acilir.
+                Log("POWER -> uyku / bekletme");
+                _batteryTimer.Stop();
+                if (_device is not null)
+                {
+                    _device.Dispose();
+                    _device = null;
+                }
+
+                return IntPtr.Zero;
+            }
+
+            if (ev is PbtApmResumeAutomatic or PbtApmResumeSuspend or PbtApmResumeCritical)
+            {
+                // USB yigini uyanmadan hemen sonra hazir olmayabilir; 2 sn sonra zorla yeniden baglan.
+                Log("POWER -> uyanma, cihaz yeniden baglanacak");
+                _resumeRetries = 0;
+                ScheduleDeviceScan(forceReconnect: true, delayMs: 2000);
+            }
+
+            return IntPtr.Zero;
+        }
+
         if (msg == WmDeviceChange)
         {
             int ev = wParam.ToInt32();
             if (ev is DbtDevNodesChanged or DbtDeviceArrival or DbtDeviceRemoveComplete)
             {
-                _deviceChangeTimer.Stop();
-                _deviceChangeTimer.Start();
+                ScheduleDeviceScan(forceReconnect: false, delayMs: 1000);
             }
         }
 
         return IntPtr.Zero;
     }
 
+    private void ScheduleDeviceScan(bool forceReconnect, int delayMs)
+    {
+        if (forceReconnect)
+        {
+            _forceReconnect = true;
+        }
+
+        _deviceChangeTimer.Stop();
+        _deviceChangeTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        _deviceChangeTimer.Start();
+    }
+
     private async void DeviceChangeTimer_Tick(object? sender, EventArgs e)
     {
         _deviceChangeTimer.Stop();
+        _deviceChangeTimer.Interval = TimeSpan.FromSeconds(1);
         if (!_started || _exiting)
         {
             return;
@@ -322,6 +369,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        bool force = _forceReconnect;
+        _forceReconnect = false;
+
         List<string> paths;
         try
         {
@@ -330,6 +380,12 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             Log("DEVICE SCAN ERROR -> " + ex.Message);
+            if (force && _resumeRetries < 3)
+            {
+                _resumeRetries++;
+                ScheduleDeviceScan(forceReconnect: true, delayMs: 2000);
+            }
+
             return;
         }
 
@@ -342,16 +398,24 @@ public partial class MainWindow : Window
                 && HidWin.Describe(HidWin.PidFromPath(best)).Mode == HidWin.LinkMode.Wired
                 && _device.Info.Mode != HidWin.LinkMode.Wired;
 
-            if (present && !betterWired)
+            if (!force && present && !betterWired)
             {
                 Log($"DEVICE SCAN -> {paths.Count} Razer cihazi, {_device.Info.Title} yerinde; degisiklik yok");
                 return;
             }
 
             Log("========================================");
-            Log(present
-                ? $"DEVICE CHANGE -> kablo takildi, {_device.Info.Title} yerine kablolu fareye geciliyor"
-                : $"DEVICE CHANGE -> {_device.Info.Title} ayrildi");
+            if (force)
+            {
+                Log($"DEVICE CHANGE -> uyanma sonrasi yeniden baglaniyor ({_device.Info.Title})");
+            }
+            else
+            {
+                Log(present
+                    ? $"DEVICE CHANGE -> kablo takildi, {_device.Info.Title} yerine kablolu fareye geciliyor"
+                    : $"DEVICE CHANGE -> {_device.Info.Title} ayrildi");
+            }
+
             _batteryTimer.Stop();
             _device.Dispose();
             _device = null;
@@ -360,10 +424,19 @@ public partial class MainWindow : Window
         if (best is null)
         {
             EnterWaitingState();
-            Log("DEVICE CHANGE -> uygun Razer cihazi yok, bekleniyor");
+            Log(force
+                ? "DEVICE CHANGE -> uyanma: henuz Razer cihazi yok, bekleniyor"
+                : "DEVICE CHANGE -> uygun Razer cihazi yok, bekleniyor");
+            if (force && _resumeRetries < 3)
+            {
+                _resumeRetries++;
+                ScheduleDeviceScan(forceReconnect: true, delayMs: 3000);
+            }
+
             return;
         }
 
+        _resumeRetries = 0;
         Log($"DEVICE CHANGE -> baglaniyor: {HidWin.Describe(HidWin.PidFromPath(best)).Title}");
         await ConnectAsync();
     }
@@ -513,6 +586,8 @@ public partial class MainWindow : Window
         {
             AutostartCheck.IsChecked = _settings.StartWithWindows;
             TrayCheck.IsChecked = _settings.MinimizeToTray;
+            DebugLogSwitch.IsChecked = _settings.ShowDebugLog;
+            ApplyDebugLogVisibility(_settings.ShowDebugLog);
             _tray?.SetChecks(_settings.StartWithWindows, _settings.MinimizeToTray);
         }
         finally
@@ -566,6 +641,63 @@ public partial class MainWindow : Window
     private void TrayCheck_Changed(object sender, RoutedEventArgs e)
     {
         SetMinimizeToTray(TrayCheck.IsChecked == true);
+    }
+
+    private void DebugLogSwitch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingUi)
+        {
+            return;
+        }
+
+        bool on = DebugLogSwitch.IsChecked == true;
+        _settings.ShowDebugLog = on;
+        _settings.Save();
+        ApplyDebugLogVisibility(on);
+        Log($"DEBUG LOG -> {(on ? "ACIK" : "KAPALI")}");
+    }
+
+    private void ApplyDebugLogVisibility(bool show)
+    {
+        DebugLogPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        DebugSwitchLabel.Text = show ? "Açık" : "Kapalı";
+        DebugGapRow.Height = show ? new GridLength(6) : new GridLength(0);
+        DebugBodyRow.Height = show ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        DebugRow.Height = show ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+
+        if (show)
+        {
+            SizeToContent = SizeToContent.Manual;
+            MinHeight = 720;
+            if (Height < 720)
+            {
+                Height = 860;
+            }
+
+            return;
+        }
+
+        // Log kapali: once icerige gore olc, sonra yuksekligi kilitle (sabit 600 switch'i kesiyordu).
+        MinHeight = 0;
+        SizeToContent = SizeToContent.Height;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            if (_settings.ShowDebugLog)
+            {
+                return;
+            }
+
+            UpdateLayout();
+            double fitted = ActualHeight;
+            if (fitted < 100)
+            {
+                return;
+            }
+
+            SizeToContent = SizeToContent.Manual;
+            MinHeight = fitted;
+            Height = fitted;
+        });
     }
 
     // ------------------------------------------------------------------

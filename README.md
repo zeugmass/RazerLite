@@ -42,3 +42,4 @@ Ayarlar: `%AppData%\RazerLite\settings.json`. Beklenmeyen hata olursa aynı klas
 - Synapse ile aynı anda çalışabilir; ikisi de aynı HID yolunu paylaşımlı açar.
 - Kablosuz (dongle) modda **fare hareket ederken** dongle ayar komutlarını BUSY ile geri çevirir (ölçüm: hareket halinde ~%85, polling hızından bağımsız). Program komutu 3 sn'ye kadar yeniden gönderir; fare durduğu an yanıt gelir. Yine de yanıt alınamazsa ekrandaki değerler korunur, "Fare yanıt vermiyor" gösterilir ve fare tekrar ulaşılabilir olunca eksik okuma kendiliğinden tamamlanır. Ayar değiştirirken fareyi sabit tutmak en hızlısıdır.
 - Dongle yeni takıldığında fare ile telsiz bağlantı birkaç saniye sürer; program ilk okuma başarısızsa 2 sn arayla iki kez daha dener.
+- Bilgisayar uykuya/bekletmeye girince HID bağlantısı bırakılır; uyanınca program Yenile'ye basmadan otomatik yeniden bağlanır (USB hazır olana kadar birkaç saniye sürebilir).

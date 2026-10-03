@@ -257,6 +257,45 @@
             <Setter Property="Cursor" Value="Hand"/>
         </Style>
 
+        <!-- Koyu tema ac/kapa switch (ToggleButton) -->
+        <Style x:Key="DarkSwitch" TargetType="{x:Type ToggleButton}">
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                        <Grid>
+                            <Border x:Name="Track"
+                                    Background="#3A3A3A"
+                                    CornerRadius="11"
+                                    SnapsToDevicePixels="True"/>
+                            <Ellipse x:Name="Thumb"
+                                     Width="16" Height="16"
+                                     Fill="#EEEEEE"
+                                     HorizontalAlignment="Left"
+                                     Margin="3,0,0,0"
+                                     VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="#2E7D32"/>
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="DarkExpander" TargetType="{x:Type Expander}">
             <Setter Property="Foreground" Value="#AAAAAA"/>
             <Setter Property="Template">
@@ -339,7 +378,7 @@
             <RowDefinition Height="10"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="10"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition x:Name="DebugRow" Height="*"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
@@ -489,11 +528,28 @@
         <Grid Grid.Row="16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="6"/>
-                <RowDefinition Height="*"/>
+                <RowDefinition x:Name="DebugGapRow" Height="6"/>
+                <RowDefinition x:Name="DebugBodyRow" Height="*"/>
             </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Text="Debug / Device Log" FontSize="13" Foreground="#AAAAAA"/>
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Debug / Device Log" FontSize="13" Foreground="#AAAAAA"
+                           VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" x:Name="DebugSwitchLabel" Text="Açık" FontSize="12"
+                           Foreground="#777777" VerticalAlignment="Center"/>
+                <ToggleButton x:Name="DebugLogSwitch"
+                              Grid.Column="3"
+                              Style="{StaticResource DarkSwitch}"
+                              ToolTip="Debug log ekranını göster / gizle"
+                              Checked="DebugLogSwitch_Changed"
+                              Unchecked="DebugLogSwitch_Changed"/>
+            </Grid>
+            <Grid x:Name="DebugLogPanel" Grid.Row="2">
                 <TextBox x:Name="DebugBox"
                          IsReadOnly="True"
                          AcceptsReturn="True"
