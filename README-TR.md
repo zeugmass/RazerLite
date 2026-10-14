@@ -27,7 +27,7 @@ polling rate seçenekleri farenin kablolu limitine göre (DA V3 Pro: 125/500/100
 ## Özellikler
 
 - DPI ve polling rate (125–8000 Hz) okuma/yazma, uygulama sonrası doğrulama
-- Pil yüzdesi ve şarj durumu (2 dakikada bir yenilenir)
+- Pil yüzdesi ve şarj durumu (2 dakikada bir yenilenir); düşük pil uyarısı: %20 ve altında, şarjda değilken sağ altta kendi uyarı penceresi (Windows bildirimleri kapalı olsa da görünür), her %5 düşüşte tekrar eder; tam ekran oyun/sunumda ertelenir
 - DPI kademeleri (farenin DPI tuşunun döndüğü 1–5 kademe) okuma/yazma
 - Profiller (en fazla 5): kaydet / güncelle / sil; `Ctrl+Alt+1…5` global kısayol veya tepsi menüsünden tek tıkla uygula
 - Sistem tepsisi: X'e basınca tepsiye küçülür (kapatılabilir), çift tık geri getirir, sağ tık menüsünde profiller ve çıkış

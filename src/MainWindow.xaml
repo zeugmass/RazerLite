@@ -4,9 +4,9 @@
         Title="RazerLite 0.16"
         Icon="pack://application:,,,/razerlite.ico"
         Width="520"
-        Height="860"
+        Height="640"
         MinWidth="520"
-        MinHeight="720"
+        MinHeight="480"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterScreen"
         Background="#151515"
@@ -360,7 +360,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="24">
+    <Grid x:Name="RootGrid" Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="16"/>
@@ -378,7 +378,7 @@
             <RowDefinition Height="10"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="10"/>
-            <RowDefinition x:Name="DebugRow" Height="*"/>
+            <RowDefinition x:Name="DebugRow" Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
@@ -484,7 +484,8 @@
             </Grid>
         </Border>
 
-        <Expander x:Name="StagesExpander" Grid.Row="12" Style="{StaticResource DarkExpander}" IsExpanded="False">
+        <Expander x:Name="StagesExpander" Grid.Row="12" Style="{StaticResource DarkExpander}" IsExpanded="False"
+                  Expanded="StagesExpander_Expanded" Collapsed="StagesExpander_Collapsed">
             <Expander.Header>
                 <TextBlock x:Name="StagesHeaderText" Text="DPI Kademeleri (fare DPI tuşu)"/>
             </Expander.Header>
@@ -523,13 +524,16 @@
                       Checked="AutostartCheck_Changed" Unchecked="AutostartCheck_Changed"/>
             <CheckBox x:Name="TrayCheck" Content="Kapatınca tepsiye küçült" Margin="20,0,0,0"
                       Checked="TrayCheck_Changed" Unchecked="TrayCheck_Changed"/>
+            <CheckBox x:Name="LowBatteryCheck" Content="Düşük pil uyarısı" Margin="20,0,0,0"
+                      ToolTip="Pil %20'nin altına düştüğünde (şarjda değilken) tepsi bildirimi göster"
+                      Checked="LowBatteryCheck_Changed" Unchecked="LowBatteryCheck_Changed"/>
         </StackPanel>
 
         <Grid Grid.Row="16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition x:Name="DebugGapRow" Height="6"/>
-                <RowDefinition x:Name="DebugBodyRow" Height="*"/>
+                <RowDefinition x:Name="DebugBodyRow" Height="Auto"/>
             </Grid.RowDefinitions>
             <Grid Grid.Row="0">
                 <Grid.ColumnDefinitions>
@@ -549,7 +553,7 @@
                               Checked="DebugLogSwitch_Changed"
                               Unchecked="DebugLogSwitch_Changed"/>
             </Grid>
-            <Grid x:Name="DebugLogPanel" Grid.Row="2">
+            <Grid x:Name="DebugLogPanel" Grid.Row="2" Height="200">
                 <TextBox x:Name="DebugBox"
                          IsReadOnly="True"
                          AcceptsReturn="True"

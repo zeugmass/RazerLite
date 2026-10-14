@@ -107,11 +107,12 @@ internal sealed class TrayIcon : IDisposable
         }
     }
 
-    public void Balloon(string title, string text)
+    public void Balloon(string title, string text, int ms = 2500, WF.ToolTipIcon icon = WF.ToolTipIcon.None)
     {
         _icon.BalloonTipTitle = title;
         _icon.BalloonTipText = text;
-        _icon.ShowBalloonTip(2500);
+        _icon.BalloonTipIcon = icon;
+        _icon.ShowBalloonTip(Math.Clamp(ms, 1000, 15000));
     }
 
     public void Dispose()

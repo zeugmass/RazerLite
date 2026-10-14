@@ -23,6 +23,12 @@ public sealed class Settings
     public bool StartWithWindows { get; set; }
     public bool ShowDebugLog { get; set; } = true;
 
+    /// <summary>Pil bu yuzdenin altina dustugunde (sarj degilken) bir kez uyar.</summary>
+    public bool LowBatteryWarn { get; set; } = true;
+
+    /// <summary>Dusuk pil esigi (varsayilan %20). 5–50 arasi tutulur.</summary>
+    public int LowBatteryPercent { get; set; } = 20;
+
     [JsonIgnore]
     public static string Directory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RazerLite");
@@ -48,6 +54,11 @@ public sealed class Settings
                     if (loaded.Profiles.Count > MaxProfiles)
                     {
                         loaded.Profiles = loaded.Profiles.Take(MaxProfiles).ToList();
+                    }
+
+                    if (loaded.LowBatteryPercent is < 5 or > 50)
+                    {
+                        loaded.LowBatteryPercent = 20;
                     }
 
                     return loaded;

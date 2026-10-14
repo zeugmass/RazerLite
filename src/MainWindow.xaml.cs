@@ -34,6 +34,8 @@ public partial class MainWindow : Window
     private bool _batteryBusyLogged;  // arka plan pil okumasinda BUSY spam'ini onle
     private bool _forceReconnect;     // uyku/uyanma sonrasi handle olmus olabilir; path ayni olsa bile yeniden ac
     private int _resumeRetries;       // uyanma sonrasi cihaz henuz yoksa kac kez daha denenecek
+    private int? _lowBatteryWarnedAt; // son uyarinin yapildigi %; sarj/yukselince sifirlanir
+    private bool _lowBatteryDeferLogged;
 
     private static readonly Brush GreenBrush = new SolidColorBrush(Color.FromRgb(0x44, 0xD6, 0x2C));
     private static readonly Brush AmberBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xB0, 0x40));
@@ -275,6 +277,7 @@ public partial class MainWindow : Window
         LinkText.Text = "";
         StagesHeaderText.Text = "DPI Kademeleri (fare DPI tuşu)";
         _lastBattery = null;
+        _lowBatteryWarnedAt = null;
         UpdateTrayToolTip();
     }
 
@@ -461,6 +464,7 @@ public partial class MainWindow : Window
         _tray = null;
         _device?.Dispose();
         _device = null;
+        ToastWindow.CloseCurrent();
     }
 
     private void Window_StateChanged(object? sender, EventArgs e)
@@ -586,6 +590,7 @@ public partial class MainWindow : Window
         {
             AutostartCheck.IsChecked = _settings.StartWithWindows;
             TrayCheck.IsChecked = _settings.MinimizeToTray;
+            LowBatteryCheck.IsChecked = _settings.LowBatteryWarn;
             DebugLogSwitch.IsChecked = _settings.ShowDebugLog;
             ApplyDebugLogVisibility(_settings.ShowDebugLog);
             _tray?.SetChecks(_settings.StartWithWindows, _settings.MinimizeToTray);
@@ -643,6 +648,23 @@ public partial class MainWindow : Window
         SetMinimizeToTray(TrayCheck.IsChecked == true);
     }
 
+    private void LowBatteryCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingUi)
+        {
+            return;
+        }
+
+        _settings.LowBatteryWarn = LowBatteryCheck.IsChecked == true;
+        _settings.Save();
+        if (!_settings.LowBatteryWarn)
+        {
+            _lowBatteryWarnedAt = null;
+        }
+
+        Log($"DUSUK PIL UYARISI -> {(_settings.LowBatteryWarn ? "ACIK" : "KAPALI")} (esik %{_settings.LowBatteryPercent})");
+    }
+
     private void DebugLogSwitch_Changed(object sender, RoutedEventArgs e)
     {
         if (_syncingUi)
@@ -657,36 +679,30 @@ public partial class MainWindow : Window
         Log($"DEBUG LOG -> {(on ? "ACIK" : "KAPALI")}");
     }
 
+    private const double DebugLogHeight = 200;
+
     private void ApplyDebugLogVisibility(bool show)
     {
         DebugLogPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         DebugSwitchLabel.Text = show ? "Açık" : "Kapalı";
         DebugGapRow.Height = show ? new GridLength(6) : new GridLength(0);
-        DebugBodyRow.Height = show ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
-        DebugRow.Height = show ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+        DebugBodyRow.Height = show ? new GridLength(DebugLogHeight) : new GridLength(0);
+        DebugLogPanel.Height = show ? DebugLogHeight : 0;
+        FitWindowToContent();
+    }
 
-        if (show)
-        {
-            SizeToContent = SizeToContent.Manual;
-            MinHeight = 720;
-            if (Height < 720)
-            {
-                Height = 860;
-            }
-
-            return;
-        }
-
-        // Log kapali: once icerige gore olc, sonra yuksekligi kilitle (sabit 600 switch'i kesiyordu).
+    /// <summary>
+    /// Dis scrollbar yok: pencere yuksekligi icerige (kademe / debug) gore ayarlanir.
+    /// Debug log sabit 200px; sadece log metni kendi icinde kayar.
+    /// </summary>
+    private void FitWindowToContent()
+    {
+        MaxHeight = SystemParameters.WorkArea.Height - 24;
         MinHeight = 0;
         SizeToContent = SizeToContent.Height;
+
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
         {
-            if (_settings.ShowDebugLog)
-            {
-                return;
-            }
-
             UpdateLayout();
             double fitted = ActualHeight;
             if (fitted < 100)
@@ -695,10 +711,15 @@ public partial class MainWindow : Window
             }
 
             SizeToContent = SizeToContent.Manual;
-            MinHeight = fitted;
-            Height = fitted;
+            Height = Math.Min(fitted, MaxHeight);
+            // Kilit yukseklik: kullanici biraz buyutebilir, asagi kuculturken icerik kesilmesin.
+            MinHeight = Math.Min(Height, _settings.ShowDebugLog ? 620 : 500);
         });
     }
+
+    private void StagesExpander_Expanded(object sender, RoutedEventArgs e) => FitWindowToContent();
+
+    private void StagesExpander_Collapsed(object sender, RoutedEventArgs e) => FitWindowToContent();
 
     // ------------------------------------------------------------------
     // Profiller
@@ -893,10 +914,11 @@ public partial class MainWindow : Window
                 _lastBattery = b;
                 _batteryBusyLogged = false;
                 BatteryText.Text = $"Pil %{pct}" + (b.Charging ? "  ⚡" : "");
-                BatteryText.Foreground = pct >= 50 ? GreenBrush : pct >= 20 ? AmberBrush : RedBrush;
+                BatteryText.Foreground = pct >= 50 ? GreenBrush : pct >= _settings.LowBatteryPercent ? AmberBrush : RedBrush;
                 LinkText.Text = b.Charging ? "şarj oluyor" : "fare bağlı";
                 Log($"BATTERY -> %{pct}{(b.Charging ? " (sarj)" : "")}");
                 UpdateTrayToolTip();
+                MaybeWarnLowBattery(pct, b.Charging);
                 return true;
             }
 
@@ -930,6 +952,47 @@ public partial class MainWindow : Window
         return false;
     }
 
+    /// <summary>
+    /// Esik alti + sarj degil: esikte uyar, sonra her %5 dususte tekrar uyar (or. 20, 15, 10, 5).
+    /// Windows bildirimleri kapali olabildigi icin kendi penceremiz kullanilir; tam ekran
+    /// oyun/sunumda bir sonraki pil okumasina ertelenir. Sarj baslayinca veya esigin ustune
+    /// cikinca sifirlanir.
+    /// </summary>
+    private void MaybeWarnLowBattery(int percent, bool charging)
+    {
+        int threshold = _settings.LowBatteryPercent;
+        if (charging || percent > threshold)
+        {
+            _lowBatteryWarnedAt = null;
+            return;
+        }
+
+        if (!_settings.LowBatteryWarn || (_lowBatteryWarnedAt is int last && percent > last - 5))
+        {
+            return;
+        }
+
+        if (!ToastWindow.CanShowNow())
+        {
+            if (!_lowBatteryDeferLogged)
+            {
+                _lowBatteryDeferLogged = true;
+                Log($"BATTERY WARN -> %{percent}; tam ekran/kilit ekrani, uyari ertelendi");
+            }
+
+            return;
+        }
+
+        _lowBatteryDeferLogged = false;
+        _lowBatteryWarnedAt = percent;
+        Log($"BATTERY WARN -> %{percent} (esik %{threshold})");
+        StatusText.Text = $"Düşük pil: %{percent}";
+        BatteryText.Foreground = RedBrush;
+        ToastWindow.Show(
+            $"{AppTitle} · Düşük pil",
+            $"Fare pili %{percent}. Şarja takmanı öneririm.");
+    }
+
     private async void BatteryTimer_Tick(object? sender, EventArgs e)
     {
         if (_busy || _device is null)
@@ -948,6 +1011,10 @@ public partial class MainWindow : Window
         {
             _busy = false;
         }
+
+        // Dusuk pilde daha sik bak (2 dk -> 45 sn); normalde 2 dk.
+        bool low = _lastBattery is { Percent: int p, Charging: false } && p <= _settings.LowBatteryPercent;
+        _batteryTimer.Interval = TimeSpan.FromSeconds(low ? 45 : 120);
 
         // Onceki cihaz okumasi fare yanit vermediginden eksik kalmissa, fare artik
         // ulasilabilir oldugu icin DPI/Hz/kademeleri kullaniciya sormadan tamamla.
