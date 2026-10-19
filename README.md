@@ -8,7 +8,7 @@ DeathAdder V4 Pro (`00BE`/`00BF`) protokol olarak aynı komutları kullandığı
 henüz doğrulanmadı — çalışmama ihtimali var.
 
 **Kablolu / kablosuz:** Program USB tak-çıkar olaylarını izler. Kabloyu takınca kablolu fareye (örn. `00B6`),
-çıkarınca dongle'a otomatik geçer; yeniden başlatmak gerekmez. Kablolu modda pil "şarj oluyor" gösterir ve
+çıkarınca dongle'a otomatik geçer; yeniden başlatmak gerekmez. Kablolu modda pil "Şarj oluyor" gösterir ve
 polling rate seçenekleri farenin kablolu limitine göre (DA V3 Pro: 125/500/1000 Hz) kısıtlanır.
 Kablolu DeathAdder V3 Pro'da genişletilmiş yoklama sorgusu gönderilmez. Profil kablolu ve kablosuz hızı ayrı tutar;
 kablo takılıyken kaydetmek kablosuz hızın üzerine yazmaz.
@@ -19,12 +19,27 @@ kablo takılıyken kaydetmek kablosuz hızın üzerine yazmaz.
 |---|---|
 | `build.cmd` | Tek EXE'yi derler (`RazerLite.exe`). Sadece .NET SDK 8 gerekir. |
 | `src\` | Kaynak kod (C# / WPF). |
-| `PollingRateTesterApp_v1.00.01.exe` | "Hz Test" butonunun açtığı Razer test aracı. `RazerLite.exe` ile aynı klasörde durmalı. |
+| `PollingRateTesterApp_v1.00.01.exe` | "Hz Testi" butonunun açtığı Razer test aracı. `RazerLite.exe` ile aynı klasörde durmalı. |
 
 ## Derleme
 
 `build.cmd` dosyasına çift tıkla. .NET SDK yoksa nasıl kurulacağını söyler
 (`winget install Microsoft.DotNet.SDK.8`). Çıktı: bu klasörde `RazerLite.exe`.
+
+## Arayüz
+
+Koyu tema, tek parça üst çubuk (Windows başlık çubuğu yok; pencere üst kenarından sürüklenir, kenarlardan
+boyutlandırılır). Pencere boyutu sabittir; küçük ekranda çalışma alanına sığacak kadar kısalır. Sol menüde üç sayfa:
+
+- **Ana Sayfa:** DPI ve polling rate, profil seçimi / kaydet / sil, Uygula; DPI kademeleri; cihazın desteklediği
+  kartlar (Boşta Uyku, Düşük Güç, Yüzey Kalibrasyonu, Dongle LED). Cihaz bir özelliği desteklemiyorsa o kart
+  gizlenir; kalan kartlar sütunu doldurur.
+- **Ayarlar:** Windows ile başlat, kapatınca tepsiye küçült, düşük pil uyarısı, Debug / Device Log anahtarı ve
+  cihaz günlüğü.
+- **Hakkında:** sürüm, bağlı cihaz bilgisi, desteklenen cihazlar, kısayollar ve proje sayfası bağlantısı.
+
+Başlıkta pil halkası (yüzde kadar dolar; rengi pile göre yeşil / sarı / kırmızı), Hz Testi ve Yenile; sol altta
+cihaz durumu kartı (bağlantı türüne göre kablosuz / kablolu ikonu, durum ve cihaz adı) bulunur.
 
 ## Özellikler
 
@@ -38,7 +53,7 @@ kablo takılıyken kaydetmek kablosuz hızın üzerine yazmaz.
 - Profiller (en fazla 5): her biri bir DPI, bir kablolu Hz ve bir kablosuz Hz tutar. Aktif bağlantının hızı uygulanır, diğeri durur. Kaydet / güncelle / sil; `Ctrl+Alt+1…5` global kısayol veya tepsi menüsünden tek tıkla uygula
 - Sistem tepsisi: X'e basınca tepsiye küçülür (kapatılabilir), çift tık geri getirir, sağ tık menüsünde profiller ve çıkış
 - Windows ile başlat (`--minimized` ile tepside açılır)
-- Debug / Device Log anahtarı
+- Debug / Device Log anahtarı (Ayarlar sayfası)
 - Tek örnek: exe tekrar çalıştırılırsa açık olan pencere öne gelir
 
 Ayarlar: `%AppData%\RazerLite\settings.json`. Beklenmeyen hata olursa aynı klasöre `crash.log` yazılır.
