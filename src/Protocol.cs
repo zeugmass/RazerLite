@@ -30,6 +30,13 @@ internal static class Protocol
     public static readonly Dictionary<byte, int> ClassicCodeToPoll =
         ClassicPollToCode.ToDictionary(kv => kv.Value, kv => kv.Key);
 
+    /// <summary>
+    /// DeathAdder V3 Pro kablolu (00B6 / 00C2). Synapse bu PID'de 0x00/0xC0 sorgusu gondermez;
+    /// dogrudan klasik 0x00/0x85 okur ve 0x00/0x05 yazar. Viper ve V4 bu listede degil.
+    /// </summary>
+    public static bool UsesClassicPolling(HidWin.Device device) =>
+        device.Pid is 0x00B6 or 0x00C2;
+
     public static IReadOnlyCollection<int> SupportedRates(HidWin.Device device) =>
         device.ExtendedPolling == false ? ClassicPollToCode.Keys : PollToCode.Keys;
 
@@ -81,6 +88,11 @@ internal static class Protocol
 
     public const int DefaultBudgetMs = 3000;
 
+    // Synapse rzDevice 0.0.340: komutlar arasi 25 ms, en fazla 20 gonderim.
+    // 300 ms, basarili bir Hz yaziminin olculen suresi; vazgecme tavani 20 deneme.
+    public const int CommandGapMs = 25;
+    public const int MaxSendAttempts = 20;
+
     public static bool IsSuccess(byte status) => status == 0x02;
 
     /// <summary>Cihaz mesgul / fare ulasilamaz: komut tekrar gonderilebilir.</summary>
@@ -88,10 +100,11 @@ internal static class Protocol
 
     /// <summary>
     /// Komutu gonderir ve yaniti okur. Olcum (HyperPolling dongle, fare hareket ederken):
-    /// dongle BUSY (0x01) dondugunde ayni yaniti tekrar okumak 5 sn boyunca hicbir sey
-    /// degistirmiyor; komutu YENIDEN gondermek ise fare durdugu anda SUCCESS veriyor.
-    /// Bu yuzden BUSY / TIMEOUT / yanki uyusmazliginda komut butce dolana kadar tekrar
-    /// gonderilir. Fare sabitken ilk gonderim basarilidir; davranis oncekiyle aynidir.
+    /// dongle BUSY (0x01) dondugunde ayni yaniti tekrar okumak sonucu degistirmiyor;
+    /// komutu yeniden gondermek fare durdugu anda SUCCESS veriyor.
+    /// Bu yuzden BUSY / TIMEOUT / yanki uyusmazliginda komut yeniden gonderilir.
+    /// Tempo Synapse ile ayni: gonderim ile okuma arasi 25 ms, en fazla 20 gonderim.
+    /// Fare sabitken ilk gonderim basarilidir.
     /// </summary>
     /// <param name="resendOnTimeout">
     /// false: TIMEOUT'ta hemen don. Polling SET icin kullanilir; orada TIMEOUT dongle'in komutu
@@ -107,10 +120,10 @@ internal static class Protocol
         var started = Environment.TickCount64;
         byte[]? last = null;
 
-        while (true)
+        for (int attempt = 1; attempt <= MaxSendAttempts; attempt++)
         {
             HidWin.SetFeature(device, report);
-            await Task.Delay(70);
+            await Task.Delay(CommandGapMs);
 
             var data = HidWin.GetFeature(device);
             last = data;
@@ -126,18 +139,43 @@ internal static class Protocol
                 return data;
             }
 
-            if (Environment.TickCount64 - started >= budgetMs)
+            if (attempt == MaxSendAttempts || Environment.TickCount64 - started >= budgetMs)
             {
                 return last;
             }
 
-            await Task.Delay(100);
+            await Task.Delay(CommandGapMs);
+        }
+
+        return last!;
+    }
+
+    /// <summary>
+    /// Synapse ayar yazmadan once setDeviceMode(3, 0) gonderir (protokol 2.5, sinif 0x00 / komut 0x04).
+    /// Basarida veya cihaz desteklemiyorsa bu tutamak icin tekrar gonderilmez.
+    /// </summary>
+    public static async Task EnsureDriverModeAsync(HidWin.Device device, Action<string>? log = null)
+    {
+        if (device.DriverModeApplied)
+        {
+            return;
+        }
+
+        var reply = await RequestAsync(device, MakeReport(0x02, 0x00, 0x04, [0x03, 0x00]));
+        log?.Invoke($"DEVICE MODE -> 3,0 {StatusText(reply[0])}");
+        if (IsSuccess(reply[0]) || reply[0] == 0x05)
+        {
+            device.DriverModeApplied = true;
         }
     }
 
     public static async Task<(int? Hz, byte Raw, byte Status)> GetPollingAsync(HidWin.Device device)
     {
-        if (device.ExtendedPolling != false)
+        if (UsesClassicPolling(device))
+        {
+            device.ExtendedPolling = false;
+        }
+        else if (device.ExtendedPolling != false)
         {
             var reply = await RequestAsync(
                 device,
@@ -207,7 +245,11 @@ internal static class Protocol
         int hz,
         Action<string>? log = null)
     {
-        if (device.ExtendedPolling is null)
+        if (UsesClassicPolling(device))
+        {
+            device.ExtendedPolling = false;
+        }
+        else if (device.ExtendedPolling is null)
         {
             await GetPollingAsync(device); // yetenegi ogren
         }
@@ -358,7 +400,7 @@ internal static class Protocol
                     break;
                 }
 
-                await Task.Delay(100);
+                await Task.Delay(CommandGapMs);
                 continue;
             }
 
@@ -367,7 +409,7 @@ internal static class Protocol
             if (r[8] != varstore || count < 1 || count > MaxDpiStages || active < 1 || active > count)
             {
                 lastProblem = $"tutarsiz baslik (vs={r[8]:x2} active={active} count={count})";
-                await Task.Delay(100);
+                await Task.Delay(CommandGapMs);
                 continue;
             }
 
@@ -394,7 +436,7 @@ internal static class Protocol
                 return new DpiStageSet(active, stages);
             }
 
-            await Task.Delay(100);
+            await Task.Delay(CommandGapMs);
         }
 
         throw new InvalidOperationException(
@@ -449,5 +491,201 @@ internal static class Protocol
 
         await Task.Delay(150);
         return await GetDpiStagesAsync(device);
+    }
+
+    // Dongle LED. Synapse setIndicatorLedConfiguration: [boyut 1, sinif 0x07, komut 0x10].
+    // Okuma 0x90. Deger: 1 baglanti, 2 pil durumu, 3 yalnizca dusuk pil.
+    public const byte LedConnection = 1;
+    public const byte LedBattery = 2;
+    public const byte LedWarning = 3;
+
+    public static async Task<(byte? Mode, byte Status)> GetIndicatorLedAsync(HidWin.Device device)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x01, 0x07, 0x90, [0x00]));
+        byte? mode = IsSuccess(reply[0]) && reply[8] is >= LedConnection and <= LedWarning ? reply[8] : null;
+        return (mode, reply[0]);
+    }
+
+    public static async Task<byte> SetIndicatorLedAsync(HidWin.Device device, byte mode)
+    {
+        if (mode is < LedConnection or > LedWarning)
+        {
+            throw new ArgumentException("Dongle LED modu 1, 2 veya 3 olmalidir.");
+        }
+
+        var reply = await RequestAsync(device, MakeReport(0x01, 0x07, 0x10, [mode]));
+        return reply[0];
+    }
+
+    // Bos birakma uykusu. Synapse getTimeToSleep / setTimeToSleep:
+    // okuma [boyut 2, sinif 0x07, komut 0x83], yazma [2, 0x07, 0x03].
+    // Sure saniye, buyuk endian. Kaydirici 1-15 dakika = 60-900 sn.
+    // Dusuk guc esigi. Synapse kaydiricisi "Low Power Mode" (5-100, adim 5) setCriticalLevel yazar.
+    // GET [1,7,129] = sinif 0x07 komut 0x81, yuzde = floor(bayt / 255 * 100).
+    // SET [1,7,1]   = sinif 0x07 komut 0x01, bayt = ceil(yuzde / 100 * 255).
+    public const int LowPowerMin = 5;
+    public const int LowPowerMax = 100;
+    public const int LowPowerStep = 5;
+
+    public static int LowPowerPercent(byte raw) =>
+        (int)Math.Floor(raw / 255d * 100);
+
+    public static byte LowPowerRaw(int percent)
+    {
+        if (percent > 255)
+        {
+            percent = 100;
+        }
+
+        percent = Math.Clamp(percent, LowPowerMin, LowPowerMax);
+        return (byte)Math.Ceiling(percent / 100d * 255);
+    }
+
+    public static async Task<(int? Percent, byte Raw, byte Status)> GetLowPowerAsync(HidWin.Device device)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x01, 0x07, 0x81, [0x00]));
+        if (!IsSuccess(reply[0]))
+        {
+            return (null, reply[8], reply[0]);
+        }
+
+        return (LowPowerPercent(reply[8]), reply[8], reply[0]);
+    }
+
+    public static async Task<byte> SetLowPowerAsync(HidWin.Device device, int percent)
+    {
+        if (percent is < LowPowerMin or > LowPowerMax || percent % LowPowerStep != 0)
+        {
+            throw new ArgumentException("Dusuk guc esigi 5 ile 100 arasinda, 5'in kati olmalidir.");
+        }
+
+        var reply = await RequestAsync(device, MakeReport(0x01, 0x07, 0x01, [LowPowerRaw(percent)]));
+        return reply[0];
+    }
+
+    public const int SleepMinMinutes = 1;
+    public const int SleepMaxMinutes = 15;
+
+    public static async Task<(int? Seconds, byte Status)> GetTimeToSleepAsync(HidWin.Device device)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x02, 0x07, 0x83, [0x00, 0x00]));
+        if (!IsSuccess(reply[0]))
+        {
+            return (null, reply[0]);
+        }
+
+        int seconds = (reply[8] << 8) | reply[9];
+        return (seconds, reply[0]);
+    }
+
+    public static async Task<byte> SetTimeToSleepAsync(HidWin.Device device, int minutes)
+    {
+        if (minutes is < SleepMinMinutes or > SleepMaxMinutes)
+        {
+            throw new ArgumentException("Bos birakma uykusu 1 ile 15 dakika arasinda olmalidir.");
+        }
+
+        int seconds = minutes * 60;
+        var reply = await RequestAsync(device, MakeReport(0x02, 0x07, 0x03, [(byte)(seconds >> 8), (byte)seconds]));
+        return reply[0];
+    }
+
+    // Yuzey kalibrasyonu. Synapse orca5PlusCalibrationEngine, Avago proximity (sinif 0, sensor 4).
+    // Akilli izleme: setProximitySensorState(1), sonra setProximitySensorLiftSetting
+    //   mod Universal_Lift_Cut_off (1), yukseklik = mm - 1. mm 1 dusuk, 2 orta, 3 yuksek.
+    // Asimetrik kesim: ayni state, mod Preset_Calibration_Hysteresis (4), yukseklik 0,
+    //   sonra setProximitySensorConfiguration [kaldirma-1, inis-1]. Aralık 1-26.
+    // Yazma sinif 0x0B komut 0x0B (boyut 4). Okuma ayni komutun 0x80'li hali 0x8B.
+    public const byte SurfaceClassId = 0;
+    public const byte SurfaceSensorId = 4;
+    public const byte SurfaceLiftSmart = 1;
+    public const byte SurfaceLiftAsymmetric = 4;
+    public const int SurfaceMinMm = 1;
+    public const int SurfaceMaxMm = 3;
+    public const int SurfaceMinStep = 1;
+    public const int SurfaceMaxStep = 26;
+
+    public readonly record struct SurfaceReading(byte? LiftMode, byte? LiftHeight, int? LiftOff, int? Landing, byte Status);
+
+    public static async Task<SurfaceReading> GetSurfaceAsync(HidWin.Device device)
+    {
+        var lift = await RequestAsync(device, MakeReport(0x04, 0x0B, 0x8B, [SurfaceClassId, SurfaceSensorId, 0x00, 0x00]));
+        if (!IsSuccess(lift[0]) || lift[8] != SurfaceClassId || lift[9] != SurfaceSensorId)
+        {
+            return new SurfaceReading(null, null, null, null, lift[0]);
+        }
+
+        var config = await RequestAsync(device, MakeReport(0x0A, 0x0B, 0x85, ConfigArgs(0, 0)));
+        int? liftOff = null;
+        int? landing = null;
+        if (IsSuccess(config[0]) && config[8] == SurfaceClassId && config[9] == SurfaceSensorId)
+        {
+            liftOff = config[10] + 1;
+            landing = config[11] + 1;
+        }
+
+        return new SurfaceReading(lift[10], lift[11], liftOff, landing, lift[0]);
+    }
+
+    public static async Task<byte> SetSurfaceSmartAsync(HidWin.Device device, int millimeters)
+    {
+        if (millimeters is < SurfaceMinMm or > SurfaceMaxMm)
+        {
+            throw new ArgumentException("Izleme mesafesi 1, 2 veya 3 mm olmalidir.");
+        }
+
+        var state = await SetProximityStateAsync(device);
+        if (!IsSuccess(state))
+        {
+            return state;
+        }
+
+        var reply = await RequestAsync(
+            device,
+            MakeReport(0x04, 0x0B, 0x0B, [SurfaceClassId, SurfaceSensorId, SurfaceLiftSmart, (byte)(millimeters - 1)]));
+        return reply[0];
+    }
+
+    public static async Task<byte> SetSurfaceAsymmetricAsync(HidWin.Device device, int liftOff, int landing)
+    {
+        if (liftOff is < SurfaceMinStep or > SurfaceMaxStep || landing is < SurfaceMinStep or > SurfaceMaxStep)
+        {
+            throw new ArgumentException("Kaldirma ve inis 1 ile 26 arasinda olmalidir.");
+        }
+
+        var state = await SetProximityStateAsync(device);
+        if (!IsSuccess(state))
+        {
+            return state;
+        }
+
+        var mode = await RequestAsync(
+            device,
+            MakeReport(0x04, 0x0B, 0x0B, [SurfaceClassId, SurfaceSensorId, SurfaceLiftAsymmetric, 0x00]));
+        if (!IsSuccess(mode[0]))
+        {
+            return mode[0];
+        }
+
+        var reply = await RequestAsync(
+            device,
+            MakeReport(0x0A, 0x0B, 0x05, ConfigArgs((byte)(liftOff - 1), (byte)(landing - 1))));
+        return reply[0];
+    }
+
+    private static async Task<byte> SetProximityStateAsync(HidWin.Device device)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x03, 0x0B, 0x03, [SurfaceClassId, SurfaceSensorId, 0x01]));
+        return reply[0];
+    }
+
+    private static byte[] ConfigArgs(byte liftOffRaw, byte landingRaw)
+    {
+        var args = new byte[10];
+        args[0] = SurfaceClassId;
+        args[1] = SurfaceSensorId;
+        args[2] = liftOffRaw;
+        args[3] = landingRaw;
+        return args;
     }
 }

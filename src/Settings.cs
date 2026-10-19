@@ -9,9 +9,19 @@ public sealed class Profile
 {
     public string Name { get; set; } = "";
     public int Dpi { get; set; } = 800;
+
+    /// <summary>Kablolu yoklama (Synapse pollingRate). 125 / 500 / 1000.</summary>
     public int Hz { get; set; } = 1000;
 
-    public override string ToString() => $"{Name} — {Dpi} DPI / {Hz} Hz";
+    /// <summary>Kablosuz yoklama (Synapse pollingRateWireless). Kablo takiliyken bu alana yazilmaz.</summary>
+    public int HzWireless { get; set; } = 1000;
+
+    public int RateFor(bool wired) => wired ? Hz : HzWireless;
+
+    public string RatesText =>
+        Hz == HzWireless ? $"{Hz} Hz" : $"kablo {Hz} / kablosuz {HzWireless} Hz";
+
+    public override string ToString() => $"{Name} — {Dpi} DPI / {RatesText}";
 }
 
 public sealed class Settings
@@ -54,6 +64,25 @@ public sealed class Settings
                     if (loaded.Profiles.Count > MaxProfiles)
                     {
                         loaded.Profiles = loaded.Profiles.Take(MaxProfiles).ToList();
+                    }
+
+                    foreach (var profile in loaded.Profiles)
+                    {
+                        // Eski kayit tek Hz tutuyordu. 1000'den buyugu yalnizca kablosuz hiz olabilir.
+                        if (profile.Hz > 1000)
+                        {
+                            if (profile.HzWireless <= 1000)
+                            {
+                                profile.HzWireless = profile.Hz;
+                            }
+
+                            profile.Hz = 1000;
+                        }
+
+                        if (profile.HzWireless is < 125 or > 8000)
+                        {
+                            profile.HzWireless = 1000;
+                        }
                     }
 
                     if (loaded.LowBatteryPercent is < 5 or > 50)

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
@@ -31,13 +32,15 @@ public partial class MainWindow : Window
     private int _lastHz;
     private Protocol.BatteryInfo? _lastBattery;
     private bool _needsFullRead;      // son cihaz okumasi eksik kaldi; fare yanit verince tamamla
+    private bool _linkReady;          // bu oturumda DPI ve Hz bir kez okundu
+    private bool _connectWaitLogged;  // ilk acilista telsiz beklerken logu tekrarlama
     private bool _batteryBusyLogged;  // arka plan pil okumasinda BUSY spam'ini onle
     private bool _forceReconnect;     // uyku/uyanma sonrasi handle olmus olabilir; path ayni olsa bile yeniden ac
     private int _resumeRetries;       // uyanma sonrasi cihaz henuz yoksa kac kez daha denenecek
     private int? _lowBatteryWarnedAt; // son uyarinin yapildigi %; sarj/yukselince sifirlanir
     private bool _lowBatteryDeferLogged;
 
-    private static readonly Brush GreenBrush = new SolidColorBrush(Color.FromRgb(0x44, 0xD6, 0x2C));
+    private static readonly Brush GreenBrush = new SolidColorBrush(Color.FromRgb(0x6C, 0xC2, 0x5C));
     private static readonly Brush AmberBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0xB0, 0x40));
     private static readonly Brush RedBrush = new SolidColorBrush(Color.FromRgb(0xE0, 0x50, 0x50));
     private static readonly Brush DimBrush = new SolidColorBrush(Color.FromRgb(0x77, 0x77, 0x77));
@@ -63,6 +66,15 @@ public partial class MainWindow : Window
         InitTrayAndHotkeys();
         SyncSettingsUi();
         RefreshProfileUi();
+
+        // Sag sutun: gorunen son cihaz karti kalan yuksekligi doldursun (kablolu modda LED karti gizlenir).
+        var visibility = DependencyPropertyDescriptor.FromProperty(VisibilityProperty, typeof(UIElement));
+        foreach (var card in DeviceCards)
+        {
+            visibility.AddValueChanged(card, (_, _) => UpdateDeviceCardFill());
+        }
+
+        UpdateDeviceCardFill();
     }
 
     private void Log(string text)
@@ -95,6 +107,9 @@ public partial class MainWindow : Window
         WriteStagesButton.IsEnabled = !busy;
         Cursor = busy ? Cursors.Wait : Cursors.Arrow;
     }
+
+    /// <summary>Kablo aktif baglantiyken yalnizca kablolu Hz okunur ve yazilir.</summary>
+    private bool WiredLink => _device?.ExtendedPolling == false;
 
     private int SelectedHz()
     {
@@ -229,28 +244,16 @@ public partial class MainWindow : Window
         {
             _device = await Task.Run(() => HidWin.Open());
             DeviceSubtitle.Text = _device.Info.Title;
+            SetLinkIcon(_device.Info.Mode == HidWin.LinkMode.Wired);
             Log($"DEVICE -> {_device.Info.Title} (VID=1532 PID={_device.Pid:X4})");
             Log($"HID CONNECTION -> READY");
             Log($"PATH -> {_device.Path}");
 
-            // Dongle yeni takildiginda fare ile telsiz baglanti birkac saniye sonra kurulur;
-            // ilk okuma TIMEOUT/BUSY donerse kisa aralikla tekrar dene.
-            const int attempts = 3;
-            for (int attempt = 1; attempt <= attempts; attempt++)
-            {
-                if (await ReadDeviceAsync(quiet: true) || _device is null)
-                {
-                    break;
-                }
-
-                if (attempt < attempts)
-                {
-                    StatusText.Text = $"Fare bekleniyor… ({attempt}/{attempts - 1})";
-                    Log($"DEVICE GET -> fare yanit vermedi, {attempt}. tekrar 2 sn sonra");
-                    await Task.Delay(2000);
-                }
-            }
-
+            // Ilk okuma. Windows acilisinda dongle hemen gorunur, fare telsizi birkac saniye sonra gelir.
+            // Synapse bu arada bekleyip kendisi tekrar dener; kullanicidan Yenile istemez.
+            _linkReady = false;
+            await ReadDeviceAsync(quiet: true);
+            _batteryTimer.Interval = _linkReady ? TimeSpan.FromSeconds(120) : TimeSpan.FromSeconds(3);
             _batteryTimer.Start();
         }
         catch (Exception ex)
@@ -271,11 +274,22 @@ public partial class MainWindow : Window
     {
         _batteryTimer.Stop();
         DeviceSubtitle.Text = "Cihaz bekleniyor…";
+        SetLinkIcon(false);
         StatusText.Text = "Cihaz bulunamadı";
         CurrentText.Text = "Dongle'ı veya fare kablosunu tak; otomatik bağlanır.";
         BatteryText.Text = "";
+        SetBatteryRing(null);
         LinkText.Text = "";
-        StagesHeaderText.Text = "DPI Kademeleri (fare DPI tuşu)";
+        _linkReady = false;
+        _connectWaitLogged = false;
+        _needsFullRead = false;
+        StagesHeaderText.Text = "—";
+        SleepPanel.Visibility = Visibility.Collapsed;
+        _sleepMinutes = null;
+        LowPowerPanel.Visibility = Visibility.Collapsed;
+        _lowPowerPercent = null;
+        SurfacePanel.Visibility = Visibility.Collapsed;
+        DongleLedPanel.Visibility = Visibility.Collapsed;
         _lastBattery = null;
         _lowBatteryWarnedAt = null;
         UpdateTrayToolTip();
@@ -679,42 +693,102 @@ public partial class MainWindow : Window
         Log($"DEBUG LOG -> {(on ? "ACIK" : "KAPALI")}");
     }
 
-    private const double DebugLogHeight = 200;
-
+    /// <summary>Ayarlar sayfasindaki log karti: acikken kalan yuksekligi doldurur.</summary>
     private void ApplyDebugLogVisibility(bool show)
     {
         DebugLogPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         DebugSwitchLabel.Text = show ? "Açık" : "Kapalı";
-        DebugGapRow.Height = show ? new GridLength(6) : new GridLength(0);
-        DebugBodyRow.Height = show ? new GridLength(DebugLogHeight) : new GridLength(0);
-        DebugLogPanel.Height = show ? DebugLogHeight : 0;
-        FitWindowToContent();
+        DebugGapRow.Height = show ? new GridLength(18) : new GridLength(0);
+        DebugBodyRow.Height = show ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
     }
 
+    private int? _sleepMinutes;
+    private int _sleepWriteGeneration;
+    private int? _lowPowerPercent;
+    private int _lowPowerWriteGeneration;
+    private int _surfaceMm = 2;
+    private bool _surfaceAsymmetric;
+    private int _surfaceLift = 13;
+    private int _surfaceLand = 12;
+    private int _surfaceWriteGeneration;
+
     /// <summary>
-    /// Dis scrollbar yok: pencere yuksekligi icerige (kademe / debug) gore ayarlanir.
-    /// Debug log sabit 200px; sadece log metni kendi icinde kayar.
+    /// Pencere boyutu sabittir (sayfalar arasinda ziplamaz); sadece kucuk ekranda calisma alanina sigdirilir.
     /// </summary>
     private void FitWindowToContent()
     {
-        MaxHeight = SystemParameters.WorkArea.Height - 24;
-        MinHeight = 0;
-        SizeToContent = SizeToContent.Height;
-
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        double available = SystemParameters.WorkArea.Height - 24;
+        if (MinHeight > available)
         {
-            UpdateLayout();
-            double fitted = ActualHeight;
-            if (fitted < 100)
-            {
-                return;
-            }
+            MinHeight = available;
+        }
 
-            SizeToContent = SizeToContent.Manual;
-            Height = Math.Min(fitted, MaxHeight);
-            // Kilit yukseklik: kullanici biraz buyutebilir, asagi kuculturken icerik kesilmesin.
-            MinHeight = Math.Min(Height, _settings.ShowDebugLog ? 620 : 500);
-        });
+        if (Height > available)
+        {
+            Height = available;
+        }
+    }
+
+    private FrameworkElement[] DeviceCards => [SleepPanel, LowPowerPanel, SurfacePanel, DongleLedPanel];
+
+    /// <summary>
+    /// Sag sutundaki kartlardan gorunen son kart kalan yuksekligi doldurur; boylece hangi kartlar
+    /// gizli olursa olsun iki sutunun alt kenari ayni cizgide biter.
+    /// </summary>
+    private void UpdateDeviceCardFill()
+    {
+        var cards = DeviceCards;
+        int last = Array.FindLastIndex(cards, c => c.Visibility == Visibility.Visible);
+        for (int i = 0; i < cards.Length; i++)
+        {
+            bool fill = i == last;
+            DeviceCardColumn.RowDefinitions[i].Height = fill ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
+            cards[i].VerticalAlignment = fill ? VerticalAlignment.Stretch : VerticalAlignment.Top;
+            cards[i].Margin = fill ? new Thickness(0) : new Thickness(0, 0, 0, 16);
+        }
+    }
+
+    /// <summary>Cihaz durumu kartindaki ikon: kabloluda fis, digerlerinde kablosuz sinyal.</summary>
+    private void SetLinkIcon(bool wired)
+    {
+        LinkIconWired.Visibility = wired ? Visibility.Visible : Visibility.Collapsed;
+        LinkIconWireless.Visibility = wired ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    // ------------------------------------------------------------------
+    // Tek parca ust cubuk
+    // ------------------------------------------------------------------
+
+    [System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    /// <summary>Windows 11: ozel ust cubuklu pencerede de yuvarlak kose (eski surumlerde etkisiz).</summary>
+    private void Window_SourceInitialized(object? sender, EventArgs e)
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        int round = 2; // DWMWCP_ROUND
+        DwmSetWindowAttribute(hwnd, 33, ref round, sizeof(int)); // DWMWA_WINDOW_CORNER_PREFERENCE
+        FitWindowToContent();
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    /// <summary>Normal kapatma: Window_Closing tepsiye kucultme ayarini uygular.</summary>
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    private void ProjectLinkButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://github.com/zeugmass/RazerLite") { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log("LINK ERROR -> " + ex.Message);
+        }
     }
 
     private void StagesExpander_Expanded(object sender, RoutedEventArgs e) => FitWindowToContent();
@@ -736,7 +810,7 @@ public partial class MainWindow : Window
                 var p = _settings.Profiles[i];
                 ProfileBox.Items.Add(new ComboBoxItem
                 {
-                    Content = $"{i + 1}.  {p.Name}  —  {p.Dpi} DPI / {p.Hz} Hz",
+                    Content = $"{i + 1}.  {p.Name}  —  {p.Dpi} DPI / {p.RatesText}",
                     Tag = i,
                     ToolTip = HotKeys.Label(i + 1),
                 });
@@ -782,8 +856,8 @@ public partial class MainWindow : Window
         {
             var p = _settings.Profiles[idx];
             DpiBox.Text = p.Dpi.ToString();
-            SelectHz(p.Hz);
-            Log($"PROFIL SECILDI -> {p.Name} ({p.Dpi} DPI / {p.Hz} Hz). Uygulamak icin UYGULA veya {HotKeys.Label(idx + 1)}.");
+            SelectHz(p.RateFor(WiredLink));
+            Log($"PROFIL SECILDI -> {p.Name} ({p.Dpi} DPI / {p.RatesText}). Uygulamak icin UYGULA veya {HotKeys.Label(idx + 1)}.");
         }
     }
 
@@ -796,6 +870,8 @@ public partial class MainWindow : Window
         }
 
         var hz = SelectedHz();
+        bool wired = WiredLink;
+        int activeHz = ClampHz(hz, out _);
 
         // Kural: girilen ad mevcut bir profille aynıysa o profil güncellenir, yeni ad yeni profil olur.
         // Secili profil varsa adi varsayilan olarak gelir (Enter = guncelle); farkli ad yaz = yeni profil.
@@ -806,9 +882,10 @@ public partial class MainWindow : Window
             ? _settings.Profiles[si].Name
             : full ? "" : $"Profil {_settings.Profiles.Count + 1}";
 
+        string linkText = wired ? $"kablo {activeHz} Hz" : $"kablosuz {activeHz} Hz";
         var hint = full
-            ? $"Profil adı ({dpi} DPI / {hz} Hz) — {Settings.MaxProfiles} profil dolu, mevcut bir adı yazarsan güncellenir:"
-            : $"Profil adı ({dpi} DPI / {hz} Hz) — yeni ad = yeni profil, mevcut ad = güncelle:";
+            ? $"Profil adı ({dpi} DPI / {linkText}) — {Settings.MaxProfiles} profil dolu, mevcut bir adı yazarsan güncellenir:"
+            : $"Profil adı ({dpi} DPI / {linkText}) — yeni ad = yeni profil, mevcut ad = güncelle:";
 
         var name = PromptWindow.Ask(this, AppTitle, hint, initial);
         if (name is null)
@@ -821,9 +898,17 @@ public partial class MainWindow : Window
         int selected;
         if (existing >= 0)
         {
-            _settings.Profiles[existing] = new Profile { Name = name, Dpi = dpi, Hz = hz };
+            var kept = _settings.Profiles[existing];
+            var updated = new Profile
+            {
+                Name = name,
+                Dpi = dpi,
+                Hz = wired ? activeHz : kept.Hz,
+                HzWireless = wired ? kept.HzWireless : activeHz,
+            };
+            _settings.Profiles[existing] = updated;
             selected = existing;
-            Log($"PROFIL GUNCELLENDI -> {selected + 1}. {name}: {dpi} DPI / {hz} Hz");
+            Log($"PROFIL GUNCELLENDI -> {selected + 1}. {name}: {dpi} DPI / {updated.RatesText}");
         }
         else
         {
@@ -835,9 +920,16 @@ public partial class MainWindow : Window
                 return;
             }
 
-            _settings.Profiles.Add(new Profile { Name = name, Dpi = dpi, Hz = hz });
+            var created = new Profile
+            {
+                Name = name,
+                Dpi = dpi,
+                Hz = wired ? activeHz : activeHz <= 1000 ? activeHz : 1000,
+                HzWireless = wired ? 1000 : activeHz,
+            };
+            _settings.Profiles.Add(created);
             selected = _settings.Profiles.Count - 1;
-            Log($"PROFIL KAYDEDILDI -> {selected + 1}. {name}: {dpi} DPI / {hz} Hz ({HotKeys.Label(selected + 1)})");
+            Log($"PROFIL KAYDEDILDI -> {selected + 1}. {name}: {dpi} DPI / {created.RatesText} ({HotKeys.Label(selected + 1)})");
         }
 
         _settings.Save();
@@ -880,17 +972,18 @@ public partial class MainWindow : Window
         }
 
         var p = _settings.Profiles[slot - 1];
-        Log($"PROFIL {slot} ({source}) -> {p.Name}: {p.Dpi} DPI / {p.Hz} Hz");
+        int profileHz = p.RateFor(WiredLink);
+        Log($"PROFIL {slot} ({source}) -> {p.Name}: {p.Dpi} DPI / {p.RatesText}");
 
         DpiBox.Text = p.Dpi.ToString();
-        SelectHz(p.Hz);
+        SelectHz(profileHz);
         RefreshProfileUi(slot - 1);
 
         await ApplyAsync();
 
-        if (_lastDpi == p.Dpi && _lastHz == p.Hz)
+        if (_lastDpi == p.Dpi && _lastHz == profileHz)
         {
-            _tray?.Balloon(AppTitle, $"{p.Name} uygulandı: {p.Dpi} DPI · {p.Hz} Hz");
+            _tray?.Balloon(AppTitle, $"{p.Name} uygulandı: {p.Dpi} DPI · {profileHz} Hz");
         }
     }
 
@@ -915,7 +1008,8 @@ public partial class MainWindow : Window
                 _batteryBusyLogged = false;
                 BatteryText.Text = $"Pil %{pct}" + (b.Charging ? "  ⚡" : "");
                 BatteryText.Foreground = pct >= 50 ? GreenBrush : pct >= _settings.LowBatteryPercent ? AmberBrush : RedBrush;
-                LinkText.Text = b.Charging ? "şarj oluyor" : "fare bağlı";
+                SetBatteryRing(pct);
+                LinkText.Text = b.Charging ? "Şarj oluyor" : "Bağlı";
                 Log($"BATTERY -> %{pct}{(b.Charging ? " (sarj)" : "")}");
                 UpdateTrayToolTip();
                 MaybeWarnLowBattery(pct, b.Charging);
@@ -937,19 +1031,50 @@ public partial class MainWindow : Window
             _lastBattery = b;
             BatteryText.Text = "Pil —";
             BatteryText.Foreground = DimBrush;
-            LinkText.Text = "fare yanıt vermiyor";
+            SetBatteryRing(null);
+            LinkText.Text = "Yanıt vermiyor";
             Log($"BATTERY -> {Transient(b.Status)}");
         }
         catch (Exception ex)
         {
             BatteryText.Text = "Pil —";
             BatteryText.Foreground = DimBrush;
-            LinkText.Text = "okunamadı";
+            SetBatteryRing(null);
+            LinkText.Text = "Okunamadı";
             Log("BATTERY ERROR -> " + ex.Message);
         }
 
         UpdateTrayToolTip();
         return false;
+    }
+
+    /// <summary>
+    /// Baslik karti pil halkasi: yay 12 yonunden saat yonunde yuzde kadar dolar; null = bos halka, "—".
+    /// Rengi XAML'da BatteryText.Foreground'a bagli.
+    /// </summary>
+    private void SetBatteryRing(int? percent)
+    {
+        const double size = 42, stroke = 4;
+        double r = (size - stroke) / 2, c = size / 2;
+        BatteryRingText.Text = percent is int p ? p.ToString() : "—";
+
+        if (percent is not int pct || pct <= 0)
+        {
+            BatteryRingArc.Data = Geometry.Empty;
+            return;
+        }
+
+        if (pct >= 100)
+        {
+            BatteryRingArc.Data = new EllipseGeometry(new Point(c, c), r, r);
+            return;
+        }
+
+        double angle = pct / 100.0 * 2 * Math.PI;
+        var end = new Point(c + r * Math.Sin(angle), c - r * Math.Cos(angle));
+        var figure = new PathFigure { StartPoint = new Point(c, c - r) };
+        figure.Segments.Add(new ArcSegment(end, new Size(r, r), 0, pct > 50, SweepDirection.Clockwise, true));
+        BatteryRingArc.Data = new PathGeometry(new[] { figure });
     }
 
     /// <summary>
@@ -993,10 +1118,634 @@ public partial class MainWindow : Window
             $"Fare pili %{percent}. Şarja takmanı öneririm.");
     }
 
+    private async Task ReadTimeToSleepAsync()
+    {
+        if (_device is null)
+        {
+            SleepPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var sleep = await Protocol.GetTimeToSleepAsync(_device);
+        if (sleep.Seconds is not int seconds)
+        {
+            Log($"SLEEP -> {Protocol.StatusText(sleep.Status)}");
+            SleepPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        int minutes = (int)Math.Round(seconds / 60.0);
+        minutes = Math.Clamp(minutes, Protocol.SleepMinMinutes, Protocol.SleepMaxMinutes);
+        Log(seconds == minutes * 60
+            ? $"SLEEP -> {minutes} dk ({seconds} sn)"
+            : $"SLEEP -> {seconds} sn (kaydirici {minutes} dk)");
+        ShowSleep(minutes);
+    }
+
+    private void ShowSleep(int minutes)
+    {
+        bool wasHidden = SleepPanel.Visibility != Visibility.Visible;
+        SleepPanel.Visibility = Visibility.Visible;
+        _sleepMinutes = minutes;
+        _syncingUi = true;
+        try
+        {
+            SleepSlider.Value = minutes;
+            SleepValueText.Text = $"{minutes} dk";
+        }
+        finally
+        {
+            _syncingUi = false;
+        }
+
+        if (wasHidden)
+        {
+            FitWindowToContent();
+        }
+    }
+
+    private async void SleepSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        int minutes = (int)Math.Round(SleepSlider.Value);
+        if (SleepValueText is not null)
+        {
+            SleepValueText.Text = $"{minutes} dk";
+        }
+
+        if (_syncingUi || _device is null || _sleepMinutes == minutes)
+        {
+            return;
+        }
+
+        int generation = ++_sleepWriteGeneration;
+        try
+        {
+            var started = Environment.TickCount64;
+            while (generation == _sleepWriteGeneration)
+            {
+                await Task.Delay(250);
+                if (generation != _sleepWriteGeneration || _syncingUi || _device is null)
+                {
+                    return;
+                }
+
+                if (_busy)
+                {
+                    if (Environment.TickCount64 - started > 4000)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                minutes = (int)Math.Round(SleepSlider.Value);
+                if (_sleepMinutes == minutes)
+                {
+                    return;
+                }
+
+                await WriteSleepAsync(minutes);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("SLEEP ERROR -> " + ex.Message);
+            StatusText.Text = "Boşta uyku yazılamadı";
+        }
+    }
+
+    private async Task WriteSleepAsync(int minutes)
+    {
+        if (_device is null)
+        {
+            return;
+        }
+
+        SetBusy(true);
+        try
+        {
+            await Protocol.EnsureDriverModeAsync(_device, Log);
+            var status = await Protocol.SetTimeToSleepAsync(_device, minutes);
+            Log($"SLEEP SET -> {minutes} dk {Protocol.StatusText(status)}");
+            if (!Protocol.IsSuccess(status))
+            {
+                StatusText.Text = "Boşta uyku yazılamadı";
+                await ReadTimeToSleepAsync();
+                return;
+            }
+
+            var read = await Protocol.GetTimeToSleepAsync(_device);
+            if (read.Seconds is int seconds)
+            {
+                int confirmed = Math.Clamp((int)Math.Round(seconds / 60.0), Protocol.SleepMinMinutes, Protocol.SleepMaxMinutes);
+                Log($"SLEEP READBACK -> {seconds} sn");
+                ShowSleep(confirmed);
+            }
+            else
+            {
+                _sleepMinutes = minutes;
+            }
+
+            StatusText.Text = "Boşta uyku uygulandı";
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async Task ReadLowPowerAsync()
+    {
+        if (_device is null)
+        {
+            LowPowerPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var power = await Protocol.GetLowPowerAsync(_device);
+        if (power.Percent is not int percent)
+        {
+            Log($"LOW POWER -> {Protocol.StatusText(power.Status)}");
+            LowPowerPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        int shown = SnapLowPower(percent);
+        Log(shown == percent
+            ? $"LOW POWER -> %{percent} (bayt {power.Raw})"
+            : $"LOW POWER -> %{percent} (bayt {power.Raw}, kaydirici %{shown})");
+        ShowLowPower(shown);
+    }
+
+    private static int SnapLowPower(int percent) =>
+        Math.Clamp(
+            (int)Math.Round(percent / (double)Protocol.LowPowerStep) * Protocol.LowPowerStep,
+            Protocol.LowPowerMin,
+            Protocol.LowPowerMax);
+
+    private void ShowLowPower(int percent)
+    {
+        bool wasHidden = LowPowerPanel.Visibility != Visibility.Visible;
+        LowPowerPanel.Visibility = Visibility.Visible;
+        _lowPowerPercent = percent;
+        _syncingUi = true;
+        try
+        {
+            LowPowerSlider.Value = percent;
+            LowPowerValueText.Text = $"%{percent}";
+        }
+        finally
+        {
+            _syncingUi = false;
+        }
+
+        UpdateLowPowerGate();
+        if (wasHidden)
+        {
+            FitWindowToContent();
+        }
+    }
+
+    private void UpdateLowPowerGate()
+    {
+        if (LowPowerPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        bool enabled = _lastHz <= 1000;
+        LowPowerSlider.IsEnabled = enabled;
+        LowPowerWarning.Visibility = enabled ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async void LowPowerSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        int percent = SnapLowPower((int)Math.Round(LowPowerSlider.Value));
+        if (LowPowerValueText is not null)
+        {
+            LowPowerValueText.Text = $"%{percent}";
+        }
+
+        if (_syncingUi || _device is null || !LowPowerSlider.IsEnabled || _lowPowerPercent == percent)
+        {
+            return;
+        }
+
+        int generation = ++_lowPowerWriteGeneration;
+        try
+        {
+            var started = Environment.TickCount64;
+            while (generation == _lowPowerWriteGeneration)
+            {
+                await Task.Delay(250);
+                if (generation != _lowPowerWriteGeneration || _syncingUi || _device is null || !LowPowerSlider.IsEnabled)
+                {
+                    return;
+                }
+
+                if (_busy)
+                {
+                    if (Environment.TickCount64 - started > 4000)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                percent = SnapLowPower((int)Math.Round(LowPowerSlider.Value));
+                if (_lowPowerPercent == percent)
+                {
+                    return;
+                }
+
+                await WriteLowPowerAsync(percent);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("LOW POWER ERROR -> " + ex.Message);
+            StatusText.Text = "Düşük güç eşiği yazılamadı";
+        }
+    }
+
+    private async Task WriteLowPowerAsync(int percent)
+    {
+        if (_device is null)
+        {
+            return;
+        }
+
+        SetBusy(true);
+        try
+        {
+            await Protocol.EnsureDriverModeAsync(_device, Log);
+            var status = await Protocol.SetLowPowerAsync(_device, percent);
+            Log($"LOW POWER SET -> %{percent} {Protocol.StatusText(status)}");
+            if (!Protocol.IsSuccess(status))
+            {
+                StatusText.Text = "Düşük güç eşiği yazılamadı";
+                await ReadLowPowerAsync();
+                return;
+            }
+
+            var read = await Protocol.GetLowPowerAsync(_device);
+            if (read.Percent is int confirmed)
+            {
+                Log($"LOW POWER READBACK -> %{confirmed} (bayt {read.Raw})");
+                ShowLowPower(SnapLowPower(confirmed));
+            }
+            else
+            {
+                _lowPowerPercent = percent;
+            }
+
+            StatusText.Text = "Düşük güç eşiği uygulandı";
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private async Task ReadSurfaceAsync()
+    {
+        if (_device is null)
+        {
+            SurfacePanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var surface = await Protocol.GetSurfaceAsync(_device);
+        if (surface.LiftMode is not byte mode || surface.LiftHeight is not byte height)
+        {
+            Log($"SURFACE -> {Protocol.StatusText(surface.Status)}");
+            SurfacePanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        if (mode == Protocol.SurfaceLiftSmart && height <= Protocol.SurfaceMaxMm - 1)
+        {
+            int lift = surface.LiftOff ?? 13;
+            int land = surface.Landing ?? 12;
+            if (lift == 1 && land == 1)
+            {
+                lift = 13;
+                land = 12;
+            }
+
+            Log($"SURFACE -> akilli {height + 1} mm");
+            ShowSurface(height + 1, asymmetric: false, lift, land);
+            return;
+        }
+
+        if (mode == Protocol.SurfaceLiftAsymmetric)
+        {
+            int lift = ClampStep(surface.LiftOff ?? _surfaceLift);
+            int land = ClampStep(surface.Landing ?? _surfaceLand);
+            Log($"SURFACE -> asimetrik kaldirma {lift} inis {land}");
+            ShowSurface(_surfaceMm, asymmetric: true, lift, land);
+            return;
+        }
+
+        Log($"SURFACE -> mod {mode} yukseklik {height}");
+        SurfacePanel.Visibility = Visibility.Collapsed;
+    }
+
+    private static int ClampStep(int value) => Math.Clamp(value, Protocol.SurfaceMinStep, Protocol.SurfaceMaxStep);
+
+    private void ShowSurface(int millimeters, bool asymmetric, int liftOff, int landing)
+    {
+        bool wasHidden = SurfacePanel.Visibility != Visibility.Visible;
+        SurfacePanel.Visibility = Visibility.Visible;
+        _surfaceMm = millimeters;
+        _surfaceAsymmetric = asymmetric;
+        _surfaceLift = ClampStep(liftOff);
+        _surfaceLand = ClampStep(landing);
+        _syncingUi = true;
+        try
+        {
+            SurfaceLow.IsChecked = !asymmetric && millimeters == 1;
+            SurfaceMid.IsChecked = !asymmetric && millimeters == 2;
+            SurfaceHigh.IsChecked = !asymmetric && millimeters == 3;
+            SurfaceDistanceRow.Visibility = asymmetric ? Visibility.Collapsed : Visibility.Visible;
+            SurfaceAsymmetric.IsChecked = asymmetric;
+            SurfaceAsymmetricPanel.Visibility = asymmetric ? Visibility.Visible : Visibility.Collapsed;
+            SurfaceLiftSlider.Value = _surfaceLift;
+            SurfaceLandSlider.Value = _surfaceLand;
+            SurfaceLiftText.Text = _surfaceLift.ToString();
+            SurfaceLandText.Text = _surfaceLand.ToString();
+            SurfaceValueText.Text = asymmetric ? "Asimetrik" : SurfaceMmText(millimeters);
+            SurfaceHint.Text = asymmetric
+                ? "Kaldırma ve iniş ayrı. Fare bu eşiklerde izlemeyi bırakır ve yeniden başlar."
+                : "Düşükte fare yüzeyden az kalkınca izlemeyi bırakır. Yüksekte daha yukarıda da izler.";
+        }
+        finally
+        {
+            _syncingUi = false;
+        }
+
+        if (wasHidden)
+        {
+            FitWindowToContent();
+        }
+    }
+
+    private static string SurfaceMmText(int millimeters) => millimeters switch
+    {
+        1 => "1 mm",
+        3 => "3 mm",
+        _ => "2 mm",
+    };
+
+    private async void SurfaceDistance_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_syncingUi || _busy || _device is null || _surfaceAsymmetric)
+        {
+            return;
+        }
+
+        int millimeters = sender == SurfaceHigh ? 3 : sender == SurfaceLow ? 1 : 2;
+        if (_surfaceMm == millimeters)
+        {
+            return;
+        }
+
+        SurfaceValueText.Text = SurfaceMmText(millimeters);
+        await WriteSurfaceAsync(millimeters, asymmetric: false, _surfaceLift, _surfaceLand);
+    }
+
+    private async void SurfaceAsymmetric_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingUi || _busy || _device is null || SurfaceAsymmetric.IsChecked is not bool asymmetric)
+        {
+            return;
+        }
+
+        if (asymmetric == _surfaceAsymmetric)
+        {
+            return;
+        }
+
+        await WriteSurfaceAsync(_surfaceMm, asymmetric, _surfaceLift, _surfaceLand);
+    }
+
+    private async void SurfaceStep_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // Kaydirici olusurken deger ayari olayi tetikler; ikinci kaydirici henuz yoktur.
+        if (SurfaceLiftSlider is null || SurfaceLandSlider is null)
+        {
+            return;
+        }
+
+        int lift = (int)Math.Round(SurfaceLiftSlider.Value);
+        int land = (int)Math.Round(SurfaceLandSlider.Value);
+        if (SurfaceLiftText is not null)
+        {
+            SurfaceLiftText.Text = lift.ToString();
+        }
+
+        if (SurfaceLandText is not null)
+        {
+            SurfaceLandText.Text = land.ToString();
+        }
+
+        if (_syncingUi || _device is null || !_surfaceAsymmetric || (lift == _surfaceLift && land == _surfaceLand))
+        {
+            return;
+        }
+
+        int generation = ++_surfaceWriteGeneration;
+        try
+        {
+            var started = Environment.TickCount64;
+            while (generation == _surfaceWriteGeneration)
+            {
+                await Task.Delay(250);
+                if (generation != _surfaceWriteGeneration || _syncingUi || _device is null)
+                {
+                    return;
+                }
+
+                if (_busy)
+                {
+                    if (Environment.TickCount64 - started > 4000)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                lift = (int)Math.Round(SurfaceLiftSlider.Value);
+                land = (int)Math.Round(SurfaceLandSlider.Value);
+                if (!_surfaceAsymmetric || (lift == _surfaceLift && land == _surfaceLand))
+                {
+                    return;
+                }
+
+                await WriteSurfaceAsync(_surfaceMm, asymmetric: true, lift, land);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("SURFACE ERROR -> " + ex.Message);
+            StatusText.Text = "Yüzey kalibrasyonu yazılamadı";
+        }
+    }
+
+    private async Task WriteSurfaceAsync(int millimeters, bool asymmetric, int liftOff, int landing)
+    {
+        if (_device is null)
+        {
+            return;
+        }
+
+        SetBusy(true);
+        try
+        {
+            await Protocol.EnsureDriverModeAsync(_device, Log);
+            byte status = asymmetric
+                ? await Protocol.SetSurfaceAsymmetricAsync(_device, liftOff, landing)
+                : await Protocol.SetSurfaceSmartAsync(_device, millimeters);
+            Log(asymmetric
+                ? $"SURFACE SET -> asimetrik kaldirma {liftOff} inis {landing} {Protocol.StatusText(status)}"
+                : $"SURFACE SET -> {millimeters} mm {Protocol.StatusText(status)}");
+            if (!Protocol.IsSuccess(status))
+            {
+                StatusText.Text = "Yüzey kalibrasyonu yazılamadı";
+                await ReadSurfaceAsync();
+                return;
+            }
+
+            StatusText.Text = "Yüzey kalibrasyonu uygulandı";
+            await ReadSurfaceAsync();
+        }
+        catch (Exception ex)
+        {
+            Log("SURFACE ERROR -> " + ex.Message);
+            StatusText.Text = "Yüzey kalibrasyonu yazılamadı";
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private static string LedHintText(byte mode) => mode switch
+    {
+        Protocol.LedConnection => "Cihaz bağlıyken sürekli beyaz yanar.",
+        Protocol.LedBattery => "Pile göre yeşil (%100), sarı (%66), turuncu (%33), kırmızı (%0).",
+        Protocol.LedWarning => "Normalde kapalı. Şarj gerekirken kırmızı yanıp söner.",
+        _ => "",
+    };
+
+    private async Task ReadIndicatorLedAsync()
+    {
+        if (_device is null || _device.Pid != 0x00B3)
+        {
+            DongleLedPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var led = await Protocol.GetIndicatorLedAsync(_device);
+        Log($"DONGLE LED -> {(led.Mode is byte m ? m.ToString() : Protocol.StatusText(led.Status))}");
+        if (led.Mode is not byte mode)
+        {
+            DongleLedPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        ShowDongleLed(mode);
+    }
+
+    private void ShowDongleLed(byte mode)
+    {
+        bool wasHidden = DongleLedPanel.Visibility != Visibility.Visible;
+        DongleLedPanel.Visibility = Visibility.Visible;
+        _syncingUi = true;
+        try
+        {
+            LedConnection.IsChecked = mode == Protocol.LedConnection;
+            LedBattery.IsChecked = mode == Protocol.LedBattery;
+            LedWarning.IsChecked = mode == Protocol.LedWarning;
+            LedHint.Text = LedHintText(mode);
+        }
+        finally
+        {
+            _syncingUi = false;
+        }
+
+        if (wasHidden)
+        {
+            FitWindowToContent();
+        }
+    }
+
+    private async void DongleLed_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_syncingUi || _busy || _device is null || _device.Pid != 0x00B3)
+        {
+            return;
+        }
+
+        byte mode = sender == LedWarning ? Protocol.LedWarning
+            : sender == LedBattery ? Protocol.LedBattery
+            : Protocol.LedConnection;
+
+        SetBusy(true);
+        try
+        {
+            await Protocol.EnsureDriverModeAsync(_device, Log);
+            var status = await Protocol.SetIndicatorLedAsync(_device, mode);
+            Log($"DONGLE LED SET -> {mode} {Protocol.StatusText(status)}");
+            if (!Protocol.IsSuccess(status))
+            {
+                StatusText.Text = "Dongle LED yazılamadı";
+                await ReadIndicatorLedAsync();
+                return;
+            }
+
+            LedHint.Text = LedHintText(mode);
+            StatusText.Text = "Dongle LED uygulandı";
+        }
+        catch (Exception ex)
+        {
+            Log("DONGLE LED ERROR -> " + ex.Message);
+            StatusText.Text = "Dongle LED yazılamadı";
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
     private async void BatteryTimer_Tick(object? sender, EventArgs e)
     {
         if (_busy || _device is null)
         {
+            return;
+        }
+
+        // Ilk acilista telsiz henuz yokken pil okumasi da dusuyor. Yenile beklemeden
+        // birkac saniyede bir tum okumayi tekrarla; baglaninca normal pil temposuna don.
+        if (!_linkReady)
+        {
+            _busy = true;
+            try
+            {
+                await ReadDeviceAsync(quiet: true);
+            }
+            finally
+            {
+                _busy = false;
+            }
+
+            _batteryTimer.Interval = _linkReady ? TimeSpan.FromSeconds(120) : TimeSpan.FromSeconds(3);
             return;
         }
 
@@ -1016,8 +1765,7 @@ public partial class MainWindow : Window
         bool low = _lastBattery is { Percent: int p, Charging: false } && p <= _settings.LowBatteryPercent;
         _batteryTimer.Interval = TimeSpan.FromSeconds(low ? 45 : 120);
 
-        // Onceki cihaz okumasi fare yanit vermediginden eksik kalmissa, fare artik
-        // ulasilabilir oldugu icin DPI/Hz/kademeleri kullaniciya sormadan tamamla.
+        // Bagli oturumda bir okuma eksik kaldiysa, fare yeniden ulasilinca tamamla.
         if (ok && _needsFullRead && _device is not null)
         {
             Log("DEVICE GET -> fare tekrar ulasilabilir, eksik okuma tamamlaniyor");
@@ -1048,7 +1796,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            StagesHeaderText.Text = "DPI Kademeleri (okunamadı)";
+            StagesHeaderText.Text = "okunamadı";
             Log("DPI STAGES ERROR -> " + ex.Message);
         }
     }
@@ -1074,8 +1822,8 @@ public partial class MainWindow : Window
 
         var active = set.Stages.FirstOrDefault(s => s.Index == set.Active);
         StagesHeaderText.Text = active is null
-            ? "DPI Kademeleri (fare DPI tuşu)"
-            : $"DPI Kademeleri (fare DPI tuşu)  ·  aktif: {active.X} DPI  ·  {set.Stages.Count} kademe";
+            ? $"{set.Stages.Count} Kademe"
+            : $"Aktif: {active.X} DPI  ·  {set.Stages.Count} Kademe";
     }
 
     private async void WriteStagesButton_Click(object sender, RoutedEventArgs e)
@@ -1151,6 +1899,7 @@ public partial class MainWindow : Window
         {
             Log("----------------------------------------");
             Log($"DPI STAGES SET ({source}) -> aktif {active}: [{string.Join(", ", dpis)}]");
+            await Protocol.EnsureDriverModeAsync(_device, Log);
             var result = await Protocol.SetDpiStagesAsync(_device, active, dpis);
             FillStagesUi(result);
             Log($"DPI STAGES READBACK -> aktif {result.Active}: [{string.Join(", ", result.Stages.Select(s => s.X))}]");
@@ -1262,21 +2011,31 @@ public partial class MainWindow : Window
         SetBusy(true);
         try
         {
-            Log("----------------------------------------");
-            Log("DEVICE GET BASLATILIYOR");
-            StatusText.Text = "Cihaz okunuyor...";
+            bool announce = _linkReady || !_connectWaitLogged;
+            if (announce)
+            {
+                Log("----------------------------------------");
+                Log("DEVICE GET BASLATILIYOR");
+            }
 
+            StatusText.Text = !_linkReady && _connectWaitLogged ? "Fare bağlanıyor…" : "Cihaz okunuyor...";
+
+            await Protocol.EnsureDriverModeAsync(_device, Log);
             var poll = await Protocol.GetPollingAsync(_device);
             var dpi = await Protocol.GetDpiAsync(_device);
 
-            Log($"POLLING -> {HzText(poll)}");
-            Log($"DPI -> {DpiText(dpi)}");
+            if (announce)
+            {
+                Log($"POLLING -> {HzText(poll)}");
+                Log($"DPI -> {DpiText(dpi)}");
+            }
             UpdatePollingChoices();
 
             if (poll.Hz is int readHz)
             {
                 SelectHz(readHz);
                 _lastHz = readHz;
+                UpdateLowPowerGate();
             }
 
             bool dpiOk = Protocol.IsSuccess(dpi.Status);
@@ -1289,9 +2048,23 @@ public partial class MainWindow : Window
             if (!dpiOk || poll.Hz is null)
             {
                 _needsFullRead = true;
-                StatusText.Text = "Fare yanıt vermiyor";
-                CurrentText.Text = "Fareyi sabit tut (veya uyandır) ve Yenile'ye bas.";
-                Log("DEVICE GET INCOMPLETE -> fare yanit vermedi; pil/kademe okumasi atlandi");
+                if (_linkReady)
+                {
+                    StatusText.Text = "Fare yanıt vermiyor";
+                    CurrentText.Text = "Fareyi sabit tut (veya uyandır) ve Yenile'ye bas.";
+                    Log("DEVICE GET INCOMPLETE -> fare yanit vermedi; pil/kademe okumasi atlandi");
+                }
+                else
+                {
+                    StatusText.Text = "Fare bağlanıyor…";
+                    CurrentText.Text = "Dongle hazır. Fare telsizi birkaç saniye sürebilir.";
+                    if (!_connectWaitLogged)
+                    {
+                        _connectWaitLogged = true;
+                        Log("DEVICE GET -> fare telsizi henuz yok; baglaninca kendiliginden devam eder");
+                    }
+                }
+
                 return false;
             }
 
@@ -1299,9 +2072,15 @@ public partial class MainWindow : Window
             StatusText.Text = "Hazır";
             Log("DEVICE GET SUCCESS");
             _needsFullRead = false;
+            _linkReady = true;
+            _connectWaitLogged = false;
 
             await ReadBatteryAsync();
             await ReadStagesAsync();
+            await ReadTimeToSleepAsync();
+            await ReadLowPowerAsync();
+            await ReadSurfaceAsync();
+            await ReadIndicatorLedAsync();
             return true;
         }
         catch (Exception ex)
@@ -1355,6 +2134,7 @@ public partial class MainWindow : Window
                 Log($"POLLING -> {wantedHz} Hz bu baglantida ({_device.Info.ModeText}) desteklenmiyor, {hz} Hz uygulanacak");
             }
             Log($"TARGET -> DPI={dpi} / POLLING={hz} Hz");
+            await Protocol.EnsureDriverModeAsync(_device, Log);
 
             StatusText.Text = $"DPI {dpi} uygulaniyor...";
             Log($"DPI SET -> {dpi}");
@@ -1382,6 +2162,8 @@ public partial class MainWindow : Window
             StatusText.Text = "Dogrulaniyor...";
             Log("========================================");
             Log("VERIFICATION BASLATILDI");
+            // Hz yazimi dongle'i yeniden numaralandirir; mod bu tutamakta tekrar yazilir.
+            await Protocol.EnsureDriverModeAsync(_device, Log);
 
             var verifyPoll = await Protocol.GetPollingAsync(_device);
             var verifyDpi = await Protocol.GetDpiAsync(_device);
@@ -1400,6 +2182,7 @@ public partial class MainWindow : Window
             {
                 SelectHz(verifyPoll.Hz!.Value);
                 _lastHz = verifyPoll.Hz.Value;
+                UpdateLowPowerGate();
             }
 
             if (dpiVerified && pollVerified)

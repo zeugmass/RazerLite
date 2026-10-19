@@ -1,0 +1,528 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Tasarim D: Theme.xaml'in uzerine derinlik katmani (gecisli kartlar, ust kenar isigi,
+         golgeler, isiltili secimler, sol menu). -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Theme.xaml"/>
+    </ResourceDictionary.MergedDictionaries>
+
+    <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+
+    <SolidColorBrush x:Key="DeepWindowBrush" Color="#0B0C0E"/>
+    <SolidColorBrush x:Key="SidebarLineBrush" Color="#1C1F23"/>
+
+    <!-- ================= Derin kart ================= -->
+    <LinearGradientBrush x:Key="DeepCardFill" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#1A1D21" Offset="0"/>
+        <GradientStop Color="#121417" Offset="1"/>
+    </LinearGradientBrush>
+    <!-- Ust kenarda ince isik, alta dogru kaybolur -->
+    <LinearGradientBrush x:Key="DeepCardEdge" StartPoint="0,0" EndPoint="0,1">
+        <GradientStop Color="#3A4046" Offset="0"/>
+        <GradientStop Color="#22262A" Offset="0.35"/>
+        <GradientStop Color="#1A1D20" Offset="1"/>
+    </LinearGradientBrush>
+
+    <Style x:Key="DeepCard" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource DeepCardFill}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource DeepCardEdge}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="16"/>
+        <Setter Property="Padding" Value="18,16"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- One cikan kart: yesil kenar, ice sizan yesil ton, yesil isik -->
+    <Style x:Key="DeepHeroCard" TargetType="Border" BasedOn="{StaticResource DeepCard}">
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#18271A" Offset="0"/>
+                    <GradientStop Color="#141A16" Offset="0.4"/>
+                    <GradientStop Color="#121417" Offset="1"/>
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="BorderBrush">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#B35CCB4A" Offset="0"/>
+                    <GradientStop Color="#405CCB4A" Offset="0.5"/>
+                    <GradientStop Color="#2A5CCB4A" Offset="1"/>
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Golge/isik ayri bir katmanda: efekt yazilarin ustunde olmadigi icin ClearType korunur
+         (WPF'te efekt verilen ogenin icindeki yazi bulaniklasir). -->
+    <Style x:Key="DeepCardHost" TargetType="ContentControl">
+        <Setter Property="Padding" Value="18,16"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContentControl">
+                    <Grid>
+                        <Border CornerRadius="16" Background="#121417">
+                            <Border.Effect>
+                                <DropShadowEffect Color="Black" Opacity="0.5" BlurRadius="26" ShadowDepth="6" Direction="270"/>
+                            </Border.Effect>
+                        </Border>
+                        <Border Style="{StaticResource DeepCard}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="DeepHeroHost" TargetType="ContentControl" BasedOn="{StaticResource DeepCardHost}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContentControl">
+                    <Grid>
+                        <Border CornerRadius="16" Background="#121417">
+                            <Border.Effect>
+                                <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.16" BlurRadius="34" ShadowDepth="0"/>
+                            </Border.Effect>
+                        </Border>
+                        <Border Style="{StaticResource DeepHeroCard}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter/>
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Kosede ince nokta dokusu -->
+    <DrawingBrush x:Key="DotTexture" TileMode="Tile" Viewport="0,0,9,9" ViewportUnits="Absolute" Stretch="None">
+        <DrawingBrush.Drawing>
+            <GeometryDrawing Brush="#2EFFFFFF">
+                <GeometryDrawing.Geometry>
+                    <EllipseGeometry Center="1,1" RadiusX="0.8" RadiusY="0.8"/>
+                </GeometryDrawing.Geometry>
+            </GeometryDrawing>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+    <RadialGradientBrush x:Key="CornerFadeMask" Center="1,0" GradientOrigin="1,0" RadiusX="1" RadiusY="1">
+        <GradientStop Color="#FF000000" Offset="0"/>
+        <GradientStop Color="#00000000" Offset="1"/>
+    </RadialGradientBrush>
+
+    <!-- ================= Metin ================= -->
+    <Style x:Key="DeepTitle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="16"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+    <Style x:Key="DeepSub" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+        <Setter Property="Margin" Value="0,3,0,0"/>
+        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+    </Style>
+    <Style x:Key="DeepIcon" TargetType="Viewbox">
+        <Setter Property="Width" Value="26"/>
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="Margin" Value="0,0,16,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <!-- Yesil ikon + hafif isilti -->
+    <Style x:Key="GlowIcon" TargetType="Path" BasedOn="{StaticResource IconAccent}">
+        <Setter Property="StrokeThickness" Value="1.7"/>
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.55" BlurRadius="8" ShadowDepth="0"/>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Deger rozeti: yesil kenarli -->
+    <Style x:Key="DeepPill" TargetType="Border">
+        <Setter Property="Background" Value="#14261A"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AccentLineBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="Padding" Value="12,4"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+    <Style x:Key="DeepPillText" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <!-- ================= Uygula: parlayan gecis ================= -->
+    <Style x:Key="DeepAccentButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Foreground" Value="{StaticResource AccentInkBrush}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Grid>
+                        <Border x:Name="Glow" CornerRadius="12" Background="#5CCB4A" Opacity="0.22" Margin="6,6,6,-2">
+                            <Border.Effect>
+                                <BlurEffect Radius="18"/>
+                            </Border.Effect>
+                        </Border>
+                        <Border x:Name="Bd" CornerRadius="12" BorderThickness="1" SnapsToDevicePixels="True">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#6FD75D" Offset="0"/>
+                                    <GradientStop Color="#45A838" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.BorderBrush>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#9BEB8C" Offset="0"/>
+                                    <GradientStop Color="#45A838" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.BorderBrush>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Glow" Property="Opacity" Value="0.34"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
+                            <Setter TargetName="Glow" Property="Opacity" Value="0"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Koyu, derin ikincil buton -->
+    <Style x:Key="DeepButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#202429" Offset="0"/>
+                    <GradientStop Color="#181B1F" Offset="1"/>
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="BorderBrush" Value="{StaticResource DeepCardEdge}"/>
+    </Style>
+
+    <!-- ================= Secili ogelerde isilti ================= -->
+    <Style x:Key="DeepStageCard" TargetType="Border" BasedOn="{StaticResource StageCard}">
+        <Setter Property="Background">
+            <Setter.Value>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#1D2125" Offset="0"/>
+                    <GradientStop Color="#16191C" Offset="1"/>
+                </LinearGradientBrush>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="BorderBrush" Value="{StaticResource DeepCardEdge}"/>
+        <Setter Property="CornerRadius" Value="13"/>
+        <Setter Property="Padding" Value="14,12,12,10"/>
+        <Setter Property="Margin" Value="5,0"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Child.Children[0].IsChecked, RelativeSource={RelativeSource Self}}" Value="True">
+                <Setter Property="Background" Value="#17291A"/>
+                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+    <!-- Kademe karti: secili kademenin yesil isigi kartin arkasinda ayri katman -->
+    <Style x:Key="DeepStageHost" TargetType="ContentControl">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Margin" Value="5,0"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContentControl">
+                    <Grid>
+                        <Border x:Name="Glow" CornerRadius="13" Background="#17291A" Opacity="0">
+                            <Border.Effect>
+                                <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.45" BlurRadius="16" ShadowDepth="0"/>
+                            </Border.Effect>
+                        </Border>
+                        <Border x:Name="Card" Style="{StaticResource DeepStageCard}" Margin="0">
+                            <ContentPresenter/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource BorderHoverBrush}"/>
+                        </Trigger>
+                        <DataTrigger Binding="{Binding Content.Children[0].IsChecked, RelativeSource={RelativeSource Self}}" Value="True">
+                            <Setter TargetName="Glow" Property="Opacity" Value="1"/>
+                            <Setter TargetName="Card" Property="Background" Value="#17291A"/>
+                            <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                        </DataTrigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="DeepStageBox" TargetType="TextBox" BasedOn="{StaticResource StageBox}">
+        <Setter Property="FontSize" Value="20"/>
+        <Setter Property="Height" Value="32"/>
+        <Setter Property="Margin" Value="0,6,0,0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
+    </Style>
+
+    <!-- Ayri kutucuklu segment (1 mm / 2 mm / 3 mm, LED) -->
+    <Style x:Key="DeepSegRadio" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource Text2Brush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Margin" Value="4,0"/>
+        <Setter Property="Height" Value="42"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type RadioButton}">
+                    <Grid>
+                        <!-- Secili isik ayri katmanda; yazi efektin disinda kalir -->
+                        <Border x:Name="Glow" CornerRadius="11" Background="#183A1A" Opacity="0">
+                            <Border.Effect>
+                                <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.45" BlurRadius="14" ShadowDepth="0"/>
+                            </Border.Effect>
+                        </Border>
+                        <Border x:Name="Bd" CornerRadius="11" BorderThickness="1" BorderBrush="{StaticResource DeepCardEdge}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#1D2125" Offset="0"/>
+                                    <GradientStop Color="#16191C" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource BorderHoverBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#183A1A"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+                            <Setter TargetName="Glow" Property="Opacity" Value="1"/>
+                            <Setter Property="Foreground" Value="{StaticResource AccentSelTextBrush}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ================= Kaydirici: gecisli dolgu + isiltili tutamac ================= -->
+    <LinearGradientBrush x:Key="SliderFill" StartPoint="0,0" EndPoint="1,0">
+        <GradientStop Color="#3E9A31" Offset="0"/>
+        <GradientStop Color="#6BD65A" Offset="1"/>
+    </LinearGradientBrush>
+    <Style x:Key="DeepSliderThumb" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="Width" Value="26"/>
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Grid>
+                        <Ellipse Width="22" Height="22" Fill="#5CCB4A" Opacity="0.35">
+                            <Ellipse.Effect>
+                                <BlurEffect Radius="8"/>
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <Ellipse Width="17" Height="17" Fill="#F6F7F8" Stroke="#9BEB8C" StrokeThickness="1.5"/>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="DeepSlider" TargetType="Slider" BasedOn="{StaticResource DarkSlider}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Track x:Name="PART_Track" VerticalAlignment="Center">
+                        <Track.DecreaseRepeatButton>
+                            <RepeatButton Style="{StaticResource SliderTrackButton}" Background="{StaticResource SliderFill}" Command="Slider.DecreaseLarge"/>
+                        </Track.DecreaseRepeatButton>
+                        <Track.IncreaseRepeatButton>
+                            <RepeatButton Style="{StaticResource SliderTrackButton}" Background="#262A2F" Command="Slider.IncreaseLarge"/>
+                        </Track.IncreaseRepeatButton>
+                        <Track.Thumb>
+                            <Thumb Style="{StaticResource DeepSliderThumb}"/>
+                        </Track.Thumb>
+                    </Track>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ================= Sol menu ogesi ================= -->
+    <Style x:Key="NavItem" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource Text2Brush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Height" Value="46"/>
+        <Setter Property="Margin" Value="0,0,0,6"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type RadioButton}">
+                    <Grid Background="Transparent">
+                        <Border x:Name="Bg" CornerRadius="11" Opacity="0">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                    <GradientStop Color="#2E5CCB4A" Offset="0"/>
+                                    <GradientStop Color="#065CCB4A" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                        </Border>
+                        <Border x:Name="Bar" Width="3" CornerRadius="2" HorizontalAlignment="Left" Margin="0,9"
+                                Background="{StaticResource AccentBrush}" Opacity="0">
+                            <Border.Effect>
+                                <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.8" BlurRadius="10" ShadowDepth="0"/>
+                            </Border.Effect>
+                        </Border>
+                        <ContentPresenter Margin="18,0,12,0" VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bg" Property="Opacity" Value="0.4"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bg" Property="Opacity" Value="1"/>
+                            <Setter TargetName="Bar" Property="Opacity" Value="1"/>
+                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="NavIcon" TargetType="Path" BasedOn="{StaticResource IconStroke}">
+        <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/>
+    </Style>
+
+    <!-- ================= Pencere butonlari (ust cubuk) ================= -->
+    <Style x:Key="CaptionButton" TargetType="Button">
+        <Setter Property="Width" Value="46"/>
+        <Setter Property="Height" Value="34"/>
+        <Setter Property="Foreground" Value="{StaticResource Text2Brush}"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#1E2125"/>
+                            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="CloseCaptionButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="Transparent">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#C42B1C"/>
+                            <Setter Property="Foreground" Value="White"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="CaptionGlyph" TargetType="Path">
+        <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+        <Setter Property="StrokeThickness" Value="1"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- Ayarlar sayfasi anahtar karti -->
+    <Style x:Key="DeepToggleCard" TargetType="Border" BasedOn="{StaticResource DeepCard}">
+        <Setter Property="Padding" Value="18,16"/>
+    </Style>
+    <Style x:Key="IconTileDeep" TargetType="Border">
+        <Setter Property="Width" Value="42"/>
+        <Setter Property="Height" Value="42"/>
+        <Setter Property="CornerRadius" Value="12"/>
+        <Setter Property="Margin" Value="0,0,14,0"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="{StaticResource DeepCardEdge}"/>
+        <Setter Property="Background" Value="#1A1E22"/>
+    </Style>
+
+    <!-- Menu ve Hakkinda ikonlari -->
+    <Geometry x:Key="IcoHome">M3.5 11 L12 4 L20.5 11 M6 9.5 V20 H18 V9.5 M10 20 V14.5 H14 V20</Geometry>
+    <Geometry x:Key="IcoSliders">M4 7 H13 M17 7 H20 M15 4.5 V9.5 M4 17 H7 M11 17 H20 M9 14.5 V19.5</Geometry>
+    <Geometry x:Key="IcoLink">M10 14 L14 10 M8.5 11.5 L6.5 13.5 A3.5 3.5 0 0 0 11.5 18.5 L13.5 16.5 M15.5 12.5 L17.5 10.5 A3.5 3.5 0 0 0 12.5 5.5 L10.5 7.5</Geometry>
+
+    <!-- Log kutusu icin ince kaydirma cubugu -->
+    <Style x:Key="ScrollTrackButton" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True"/>
+        <Setter Property="IsTabStop" Value="False"/>
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent"/>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
+        <Setter Property="Width" Value="8"/>
+        <Setter Property="MinWidth" Value="8"/>
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollTrackButton}" Command="ScrollBar.PageUpCommand"/>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource ScrollTrackButton}" Command="ScrollBar.PageDownCommand"/>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border x:Name="T" Background="#2E3236" CornerRadius="3" Margin="1,2"/>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="T" Property="Background" Value="#454B51"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

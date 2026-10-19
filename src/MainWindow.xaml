@@ -3,592 +3,1106 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="RazerLite 0.16"
         Icon="pack://application:,,,/razerlite.ico"
-        Width="520"
-        Height="640"
-        MinWidth="520"
-        MinHeight="480"
+        Width="1200"
+        Height="810"
+        MinWidth="1120"
+        MinHeight="640"
         ResizeMode="CanResize"
         WindowStartupLocation="CenterScreen"
-        Background="#151515"
+        Background="#0B0C0E"
+        UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType"
+        SourceInitialized="Window_SourceInitialized"
         ContentRendered="Window_ContentRendered"
         StateChanged="Window_StateChanged"
         Closing="Window_Closing">
 
+    <!-- Tek parca ust cubuk: Windows cubugu yok; surukleme ve kenardan boyutlandirma WindowChrome'dan -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="40" ResizeBorderThickness="6" GlassFrameThickness="0"
+                      CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </WindowChrome.WindowChrome>
+
     <Window.Resources>
-        <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="#EEEEEE"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-        </Style>
-        <Style TargetType="Label">
-            <Setter Property="Foreground" Value="#AAAAAA"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="FontSize" Value="13"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Background" Value="#222222"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#444444"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="FontSize" Value="15"/>
-            <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="CaretBrush" Value="#FFFFFF"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type TextBox}">
-                        <Border x:Name="Bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4"
-                                SnapsToDevicePixels="True">
-                            <!-- TextBox'in ic gorunumu Padding'i kendisi uygular; burada tekrar Margin verilmez
-                                 (verilirse bosluk iki katina cikar). Metin VerticalContentAlignment ile ortalanir. -->
-                            <ScrollViewer x:Name="PART_ContentHost"
-                                          Focusable="False"
-                                          HorizontalScrollBarVisibility="Hidden"
-                                          VerticalScrollBarVisibility="Hidden"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#666666"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#888888"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style TargetType="Button">
-            <Setter Property="Background" Value="#2D2D2D"/>
-            <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="BorderBrush" Value="#444444"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="10,6"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="Bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4"
-                                SnapsToDevicePixels="True">
-                            <ContentPresenter Margin="{TemplateBinding Padding}"
-                                              HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"
-                                              RecognizesAccessKey="True"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#383838"/>
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#666666"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#1F1F1F"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
-                                <Setter Property="Cursor" Value="Arrow"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/ThemeDeep.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
 
-        <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#9A9A9A"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Width" Value="28"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type Button}">
-                        <Border x:Name="Bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
-                                SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#2A2A2A"/>
-                                <Setter Property="Foreground" Value="#FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#1A1A1A"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Bd" Property="Opacity" Value="0.45"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+            <!-- Buyutulunce ekrandan tasmayi onler -->
+            <Style x:Key="RootStyle" TargetType="Grid">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType=Window}}" Value="Maximized">
+                        <Setter Property="Margin" Value="7"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
 
-        <Style x:Key="DarkComboBoxItem" TargetType="{x:Type ComboBoxItem}">
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Background" Value="#252525"/>
-            <Setter Property="Padding" Value="10,7"/>
-            <Style.Triggers>
-                <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Foreground" Value="White"/>
-                    <Setter Property="Background" Value="#3A3A3A"/>
-                </Trigger>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Foreground" Value="White"/>
-                    <Setter Property="Background" Value="#333333"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Foreground" Value="#666666"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
+            <Style x:Key="DeepInput" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#1C2024" Offset="0"/>
+                            <GradientStop Color="#15181B" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="BorderBrush" Value="{StaticResource DeepCardEdge}"/>
+            </Style>
 
-        <Style x:Key="DarkComboBox" TargetType="{x:Type ComboBox}">
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Background" Value="#252525"/>
-            <Setter Property="BorderBrush" Value="#444444"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="ItemContainerStyle" Value="{StaticResource DarkComboBoxItem}"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type ComboBox}">
-                        <Grid>
-                            <ToggleButton x:Name="toggleButton"
-                                          Focusable="false"
-                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                          ClickMode="Press">
-                                <ToggleButton.Template>
-                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
-                                        <Border x:Name="MainBorder"
-                                                Background="#252525"
-                                                BorderBrush="#444444"
-                                                BorderThickness="1"
-                                                CornerRadius="6">
-                                            <Grid>
-                                                <Border Width="38"
-                                                        HorizontalAlignment="Right"
-                                                        Background="#303030"
-                                                        CornerRadius="0,5,5,0">
-                                                    <Path Width="10" Height="6"
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Center"
-                                                          Fill="White"
-                                                          Data="M 0 0 L 5 5 L 10 0 Z"/>
+            <!-- DPI kademeleri karti: derin kart gorunumu, acikken sol sutunda kalan yeri doldurur -->
+            <Style x:Key="DeepExpander" TargetType="{x:Type Expander}">
+                <Setter Property="VerticalAlignment" Value="Stretch"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="{x:Type Expander}">
+                            <ContentControl Style="{StaticResource DeepCardHost}" Padding="0">
+                                <DockPanel>
+                                    <ToggleButton DockPanel.Dock="Top" Cursor="Hand" Focusable="False"
+                                                  IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                        <ToggleButton.Template>
+                                            <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                                <Border Background="Transparent" Padding="20,16,18,14">
+                                                    <ContentPresenter/>
                                                 </Border>
-                                            </Grid>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="MainBorder" Property="BorderBrush" Value="#666666"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </ToggleButton.Template>
-                            </ToggleButton>
-                            <ContentPresenter Margin="12,0,42,0"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"
-                                              IsHitTestVisible="False"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
-                                              TextElement.Foreground="White"/>
-                            <Popup x:Name="PART_Popup"
-                                   AllowsTransparency="True"
-                                   Focusable="False"
-                                   IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   Placement="Bottom"
-                                   PopupAnimation="Slide">
-                                <Border MinWidth="{TemplateBinding ActualWidth}"
-                                        Background="#252525"
-                                        BorderBrush="#444444"
-                                        BorderThickness="1"
-                                        CornerRadius="6"
-                                        Margin="0,3,0,0">
-                                    <ScrollViewer CanContentScroll="True" MaxHeight="300">
-                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"
-                                                        SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                                    </ScrollViewer>
-                                </Border>
-                            </Popup>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
-
-        <Style TargetType="RadioButton">
-            <Setter Property="Foreground" Value="#CCCCCC"/>
-            <Setter Property="FontFamily" Value="Segoe UI"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Cursor" Value="Hand"/>
-        </Style>
-
-        <!-- Koyu tema ac/kapa switch (ToggleButton) -->
-        <Style x:Key="DarkSwitch" TargetType="{x:Type ToggleButton}">
-            <Setter Property="Width" Value="40"/>
-            <Setter Property="Height" Value="22"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Focusable" Value="False"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type ToggleButton}">
-                        <Grid>
-                            <Border x:Name="Track"
-                                    Background="#3A3A3A"
-                                    CornerRadius="11"
-                                    SnapsToDevicePixels="True"/>
-                            <Ellipse x:Name="Thumb"
-                                     Width="16" Height="16"
-                                     Fill="#EEEEEE"
-                                     HorizontalAlignment="Left"
-                                     Margin="3,0,0,0"
-                                     VerticalAlignment="Center"/>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="#2E7D32"/>
-                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
-                                <Setter TargetName="Thumb" Property="Margin" Value="0,0,3,0"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Track" Property="Opacity" Value="0.9"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="DarkExpander" TargetType="{x:Type Expander}">
-            <Setter Property="Foreground" Value="#AAAAAA"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="{x:Type Expander}">
-                        <Border Background="#1E1E1E" BorderBrush="#303030" BorderThickness="1" CornerRadius="5">
-                            <DockPanel>
-                                <ToggleButton x:Name="HeaderToggle"
-                                              DockPanel.Dock="Top"
-                                              IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                              Cursor="Hand"
-                                              Focusable="False">
-                                    <ToggleButton.Template>
-                                        <ControlTemplate TargetType="{x:Type ToggleButton}">
-                                            <Border Background="Transparent" Padding="12,9">
-                                                <DockPanel>
-                                                    <TextBlock x:Name="Chevron"
-                                                               DockPanel.Dock="Right"
-                                                               FontFamily="Segoe MDL2 Assets"
-                                                               FontSize="11"
-                                                               Text="&#xE70D;"
-                                                               Foreground="#9A9A9A"
-                                                               VerticalAlignment="Center"/>
-                                                    <ContentPresenter VerticalAlignment="Center"
-                                                                      TextElement.Foreground="#DDDDDD"
-                                                                      TextElement.FontSize="13"/>
-                                                </DockPanel>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsChecked" Value="True">
-                                                    <Setter TargetName="Chevron" Property="Text" Value="&#xE70E;"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </ToggleButton.Template>
-                                    <ContentPresenter Content="{TemplateBinding Header}"/>
-                                </ToggleButton>
-                                <Border x:Name="ContentHost"
-                                        BorderBrush="#303030"
-                                        BorderThickness="0,1,0,0"
-                                        Padding="12,10,12,12"
-                                        Visibility="Collapsed">
-                                    <ContentPresenter/>
-                                </Border>
-                            </DockPanel>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsExpanded" Value="True">
-                                <Setter TargetName="ContentHost" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="StageBox" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-            <Setter Property="Width" Value="110"/>
-            <Setter Property="Height" Value="32"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="8,2"/>
-        </Style>
+                                            </ControlTemplate>
+                                        </ToggleButton.Template>
+                                        <ContentPresenter Content="{TemplateBinding Header}"/>
+                                    </ToggleButton>
+                                    <Border x:Name="ContentHost" Padding="15,0,15,16" Visibility="Collapsed">
+                                        <ContentPresenter/>
+                                    </Border>
+                                </DockPanel>
+                            </ContentControl>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsExpanded" Value="True">
+                                    <Setter TargetName="ContentHost" Property="Visibility" Value="Visible"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <Trigger Property="IsExpanded" Value="False">
+                        <Setter Property="VerticalAlignment" Value="Top"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
     </Window.Resources>
 
-    <Grid x:Name="RootGrid" Margin="24">
+    <Grid x:Name="RootGrid" Style="{StaticResource RootStyle}" ClipToBounds="True">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="16"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="12"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="12"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="16"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="14"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="10"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="10"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="10"/>
-            <RowDefinition x:Name="DebugRow" Height="Auto"/>
+            <RowDefinition x:Name="DebugRow" Height="*"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <StackPanel>
-                <TextBlock Text="RazerLite" FontSize="25" FontWeight="SemiBold"/>
-                <TextBlock x:Name="DeviceSubtitle" Text="Cihaz aranıyor…"
-                           Foreground="#777777" FontSize="12" Margin="0,3,0,0"/>
-            </StackPanel>
-
-            <Button x:Name="RefreshButton" Grid.Column="1" Width="75" Height="32"
-                    Content="Yenile" Click="RefreshButton_Click"/>
-            <Button x:Name="TestButton" Grid.Column="3" Width="82" Height="32"
-                    Content="Hz Test" ToolTip="Polling Rate Tester'ı aç"
-                    Click="TestButton_Click"/>
+        <!-- ================= Arka plan isiklari (dekor) ================= -->
+        <Grid IsHitTestVisible="False">
+            <Ellipse Width="980" Height="420" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-230,-120,0">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#2E5CCB4A" Offset="0"/>
+                        <GradientStop Color="#0C5CCB4A" Offset="0.55"/>
+                        <GradientStop Color="#005CCB4A" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse Width="560" Height="560" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="-300,0,0,-260">
+                <Ellipse.Fill>
+                    <RadialGradientBrush>
+                        <GradientStop Color="#365CCB4A" Offset="0"/>
+                        <GradientStop Color="#0A5CCB4A" Offset="0.6"/>
+                        <GradientStop Color="#005CCB4A" Offset="1"/>
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Canvas>
+                <Path Data="M 380,150 C 560,60 760,170 960,40 S 1140,-10 1220,-40" StrokeThickness="7" Opacity="0.35">
+                    <Path.Stroke>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#005CCB4A" Offset="0"/>
+                            <GradientStop Color="#FF5CCB4A" Offset="0.6"/>
+                            <GradientStop Color="#005CCB4A" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Path.Stroke>
+                    <Path.Effect>
+                        <BlurEffect Radius="12"/>
+                    </Path.Effect>
+                </Path>
+                <Path Data="M 380,150 C 560,60 760,170 960,40 S 1140,-10 1220,-40" StrokeThickness="1.2" Opacity="0.55">
+                    <Path.Stroke>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#005CCB4A" Offset="0"/>
+                            <GradientStop Color="#FF8BE57B" Offset="0.6"/>
+                            <GradientStop Color="#005CCB4A" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Path.Stroke>
+                </Path>
+                <Path Data="M 520,120 C 700,40 860,150 1050,20 S 1180,-20 1240,-30" StrokeThickness="1" Opacity="0.3">
+                    <Path.Stroke>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#005CCB4A" Offset="0"/>
+                            <GradientStop Color="#FF5CCB4A" Offset="0.7"/>
+                            <GradientStop Color="#005CCB4A" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Path.Stroke>
+                </Path>
+            </Canvas>
         </Grid>
 
-        <StackPanel Grid.Row="2">
-            <Label Content="DPI"/>
-            <TextBox x:Name="DpiBox" Height="40" Text="800"
-                     VerticalContentAlignment="Center" KeyDown="DpiBox_KeyDown"/>
-        </StackPanel>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Row="4">
-            <Label Content="Polling Rate"/>
-            <ComboBox x:Name="PollingBox"
-                      Style="{StaticResource DarkComboBox}"
-                      Margin="0,8,0,0"
-                      Height="40"
-                      FontSize="14"
-                      SelectedIndex="6">
-                <ComboBoxItem Content="125 Hz" Tag="125"/>
-                <ComboBoxItem Content="250 Hz" Tag="250"/>
-                <ComboBoxItem Content="500 Hz" Tag="500"/>
-                <ComboBoxItem Content="1000 Hz" Tag="1000"/>
-                <ComboBoxItem Content="2000 Hz" Tag="2000"/>
-                <ComboBoxItem Content="4000 Hz" Tag="4000"/>
-                <ComboBoxItem Content="8000 Hz" Tag="8000"/>
-            </ComboBox>
-        </StackPanel>
+            <!-- ================= Sol menu ================= -->
+            <Border BorderBrush="{StaticResource SidebarLineBrush}" BorderThickness="0,0,1,0">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#E60F1012" Offset="0"/>
+                        <GradientStop Color="#990D0E10" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Grid>
+                    <Canvas IsHitTestVisible="False" ClipToBounds="True">
+                        <Path Data="M -40,560 C 40,600 110,660 140,780 M -40,610 C 30,640 80,700 100,800" StrokeThickness="6" Opacity="0.35"
+                              Stroke="#5CCB4A">
+                            <Path.Effect>
+                                <BlurEffect Radius="12"/>
+                            </Path.Effect>
+                        </Path>
+                        <Path Data="M -40,560 C 40,600 110,660 140,780 M -40,610 C 30,640 80,700 100,800" StrokeThickness="1" Opacity="0.6"
+                              Stroke="#8BE57B"/>
+                    </Canvas>
 
-        <StackPanel Grid.Row="6">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Right"
-                           Text="Hızlı geçiş: Ctrl+Alt+1…5 · tepsi menüsü"
-                           Foreground="#666666" FontSize="11" VerticalAlignment="Center"/>
-                <Label Content="Profil"/>
-            </DockPanel>
-            <Grid Margin="0,8,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="8"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="8"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <ComboBox x:Name="ProfileBox"
-                          Style="{StaticResource DarkComboBox}"
-                          Height="36"
-                          FontSize="13"
-                          SelectionChanged="ProfileBox_SelectionChanged"/>
-                <Button x:Name="SaveProfileButton" Grid.Column="2" Width="75" Height="36"
-                        Content="Kaydet"
-                        ToolTip="Yukarıdaki DPI ve Polling Rate değerlerini profil olarak kaydet.&#x0a;Yeni ad = yeni profil, mevcut bir profilin adı = o profili güncelle."
-                        Click="SaveProfileButton_Click"/>
-                <Button x:Name="DeleteProfileButton" Grid.Column="4" Width="60" Height="36"
-                        Content="Sil"
-                        ToolTip="Seçili profili sil"
-                        Click="DeleteProfileButton_Click"/>
-            </Grid>
-        </StackPanel>
+                    <DockPanel Margin="14,0,14,18">
+                        <StackPanel DockPanel.Dock="Top" Margin="0,36,0,0" HorizontalAlignment="Center">
+                            <!-- Logo: isik ve harf parlamasi ayri katmanlarda, harfin kendisi net -->
+                            <Grid Width="74" Height="74" HorizontalAlignment="Center">
+                                <Border CornerRadius="22" Background="#0E1610">
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.28" BlurRadius="30" ShadowDepth="0"/>
+                                    </Border.Effect>
+                                </Border>
+                                <Border CornerRadius="22" BorderBrush="{StaticResource AccentLineBrush}" BorderThickness="1">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#173119" Offset="0"/>
+                                            <GradientStop Color="#0E1610" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                                <TextBlock Text="R" FontFamily="{StaticResource DisplayFont}" FontSize="40" TextOptions.TextFormattingMode="Ideal" FontWeight="Bold"
+                                           Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="0,0,0,3" Opacity="0.8">
+                                    <TextBlock.Effect>
+                                        <BlurEffect Radius="12"/>
+                                    </TextBlock.Effect>
+                                </TextBlock>
+                                <TextBlock Text="R" FontFamily="{StaticResource DisplayFont}" FontSize="40" TextOptions.TextFormattingMode="Ideal" FontWeight="Bold"
+                                           Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="0,0,0,3"/>
+                            </Grid>
+                            <TextBlock Text="RazerLite" FontSize="17" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,16,0,0"/>
+                            <TextBlock Text="v0.16" Foreground="{StaticResource MutedBrush}" FontSize="12" HorizontalAlignment="Center" Margin="0,2,0,0"/>
+                        </StackPanel>
 
-        <Button x:Name="ApplyButton" Grid.Row="8" Height="45"
-                Content="UYGULA" FontWeight="SemiBold" Click="ApplyButton_Click"/>
+                        <!-- Cihaz durumu karti (LinkText / BatteryText / DeviceSubtitle'i yansitir; cihaz yoksa gri) -->
+                        <Border DockPanel.Dock="Bottom" CornerRadius="14" Padding="14,12,14,14" BorderThickness="1"
+                                BorderBrush="{StaticResource DeepCardEdge}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="#F01A1E21" Offset="0"/>
+                                    <GradientStop Color="#F0111316" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Resources>
+                                <!-- Durum rengi: pil rengini izler, cihaz yokken soluk gri -->
+                                <Style x:Key="StatusStroke" TargetType="Path" BasedOn="{StaticResource IconStroke}">
+                                    <Setter Property="Stroke" Value="{Binding Foreground, ElementName=BatteryText}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=LinkText}" Value="">
+                                            <Setter Property="Stroke" Value="{StaticResource FaintBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                                <Style x:Key="StatusFill" TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{Binding Foreground, ElementName=BatteryText}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=LinkText}" Value="">
+                                            <Setter Property="Fill" Value="{StaticResource FaintBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                                <Style x:Key="StatusText" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                    <Setter Property="Text" Value="{Binding Text, ElementName=LinkText}"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=LinkText}" Value="">
+                                            <Setter Property="Text" Value="Bağlı değil"/>
+                                            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                                <Style x:Key="StatusIconTile" TargetType="Border">
+                                    <Setter Property="Background" Value="#14221A"/>
+                                    <Setter Property="BorderBrush" Value="{StaticResource AccentLineBrush}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=LinkText}" Value="">
+                                            <Setter Property="Background" Value="#181B1F"/>
+                                            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush2}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Resources>
+                            <StackPanel>
+                                <TextBlock Text="CİHAZ DURUMU" Foreground="{StaticResource FaintBrush}" FontSize="10" FontWeight="SemiBold"
+                                           Margin="0,0,0,10"/>
+                                <DockPanel>
+                                    <!-- Baglanti ikonu: kablosuzda sinyal, kabloluda fis (SetLinkIcon) -->
+                                    <Border Style="{StaticResource StatusIconTile}" Width="36" Height="36" CornerRadius="10" BorderThickness="1"
+                                            Margin="0,0,11,0" VerticalAlignment="Top">
+                                        <Grid>
+                                            <Viewbox x:Name="LinkIconWireless" Width="18" Height="18">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Style="{StaticResource StatusStroke}" StrokeThickness="2"
+                                                          Data="M12 19 V19.2 M8.6 15.6 A4.8 4.8 0 0 1 15.4 15.6 M5.4 12.4 A9.3 9.3 0 0 1 18.6 12.4 M2.4 9.2 A13.6 13.6 0 0 1 21.6 9.2"/>
+                                                </Canvas>
+                                            </Viewbox>
+                                            <Viewbox x:Name="LinkIconWired" Width="18" Height="18" Visibility="Collapsed">
+                                                <Canvas Width="24" Height="24">
+                                                    <Path Style="{StaticResource StatusStroke}" StrokeThickness="1.9"
+                                                          Data="M9 2.5 V7 M15 2.5 V7 M6.5 7 H17.5 V10.5 A5.5 5.5 0 0 1 6.5 10.5 Z M12 16 V21.5"/>
+                                                </Canvas>
+                                            </Viewbox>
+                                        </Grid>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <StackPanel Orientation="Horizontal">
+                                            <!-- Canli baglanti noktasi: halka yavasca genisleyip kaybolur -->
+                                            <Grid Width="8" Height="8" VerticalAlignment="Center" Margin="0,1,8,0">
+                                                <Ellipse x:Name="StatusPulse" Style="{StaticResource StatusFill}" Opacity="0.6" RenderTransformOrigin="0.5,0.5">
+                                                    <Ellipse.RenderTransform>
+                                                        <ScaleTransform/>
+                                                    </Ellipse.RenderTransform>
+                                                    <Ellipse.Triggers>
+                                                        <EventTrigger RoutedEvent="Loaded">
+                                                            <BeginStoryboard>
+                                                                <Storyboard RepeatBehavior="Forever">
+                                                                    <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleX" From="1" To="2.6" Duration="0:0:1.8"/>
+                                                                    <DoubleAnimation Storyboard.TargetProperty="RenderTransform.ScaleY" From="1" To="2.6" Duration="0:0:1.8"/>
+                                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0.6" To="0" Duration="0:0:1.8"/>
+                                                                </Storyboard>
+                                                            </BeginStoryboard>
+                                                        </EventTrigger>
+                                                    </Ellipse.Triggers>
+                                                </Ellipse>
+                                                <Ellipse Style="{StaticResource StatusFill}"/>
+                                            </Grid>
+                                            <TextBlock Style="{StaticResource StatusText}" FontSize="14" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Text, ElementName=DeviceSubtitle}" Foreground="{StaticResource MutedBrush}"
+                                                   FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0" LineHeight="14"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </StackPanel>
+                        </Border>
 
-        <Border Grid.Row="10"
-                Background="#1E1E1E"
-                BorderBrush="#303030"
-                BorderThickness="1"
-                CornerRadius="5"
-                Padding="12">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock x:Name="StatusText" Text="Hazırlanıyor..." FontSize="13"/>
-                    <TextBlock x:Name="CurrentText" Text="Cihaz bağlanıyor..."
-                               Foreground="#777777" FontSize="12" Margin="0,5,0,0"/>
+                        <StackPanel Margin="0,34,0,0">
+                            <RadioButton x:Name="NavHome" GroupName="Nav" Style="{StaticResource NavItem}" IsChecked="True">
+                                <StackPanel Orientation="Horizontal">
+                                    <Viewbox Width="19" Height="19" Margin="0,0,14,0">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource NavIcon}" Data="{StaticResource IcoHome}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Ana Sayfa" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavSettings" GroupName="Nav" Style="{StaticResource NavItem}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Viewbox Width="19" Height="19" Margin="0,0,14,0">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource NavIcon}" Data="{StaticResource IcoSliders}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Ayarlar" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton x:Name="NavAbout" GroupName="Nav" Style="{StaticResource NavItem}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Viewbox Width="19" Height="19" Margin="0,0,14,0">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource NavIcon}" Data="{StaticResource IcoInfo}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Hakkında" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </RadioButton>
+                        </StackPanel>
+                    </DockPanel>
+                </Grid>
+            </Border>
+
+            <!-- ================= Icerik ================= -->
+            <Grid Grid.Column="1" Margin="26,0,22,22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="40"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="20"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Pencere butonlari -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,0,-22,0">
+                    <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButton}" WindowChrome.IsHitTestVisibleInChrome="True"
+                            ToolTip="Simge durumuna küçült" Click="MinimizeButton_Click">
+                        <Path Style="{StaticResource CaptionGlyph}" Data="M0,0.5 H10" Width="10" Height="1"/>
+                    </Button>
+                    <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}" WindowChrome.IsHitTestVisibleInChrome="True"
+                            ToolTip="Ekranı kapla" Click="MaximizeButton_Click">
+                        <Path Style="{StaticResource CaptionGlyph}" Data="M0.5,0.5 H9.5 V9.5 H0.5 Z" Width="10" Height="10"/>
+                    </Button>
+                    <Button x:Name="CloseButton" Style="{StaticResource CloseCaptionButton}" WindowChrome.IsHitTestVisibleInChrome="True"
+                            ToolTip="Kapat" Click="CloseButton_Click">
+                        <Path Style="{StaticResource CaptionGlyph}" Data="M0,0 L10,10 M10,0 L0,10" Width="10" Height="10"/>
+                    </Button>
                 </StackPanel>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Right">
-                    <TextBlock x:Name="BatteryText" Text="" FontSize="13" HorizontalAlignment="Right"/>
-                    <TextBlock x:Name="LinkText" Text="" Foreground="#777777" FontSize="11"
-                               HorizontalAlignment="Right" Margin="0,4,0,0"/>
-                </StackPanel>
-            </Grid>
-        </Border>
 
-        <Expander x:Name="StagesExpander" Grid.Row="12" Style="{StaticResource DarkExpander}" IsExpanded="False"
-                  Expanded="StagesExpander_Expanded" Collapsed="StagesExpander_Collapsed">
-            <Expander.Header>
-                <TextBlock x:Name="StagesHeaderText" Text="DPI Kademeleri (fare DPI tuşu)"/>
-            </Expander.Header>
-            <StackPanel>
-                <TextBlock Text="Kademe seçimi anında fareye uygulanır. DPI değerlerini değiştirdiysen 'Kademeleri Fareye Yaz' ile gönder; boş bırakılan kademe kullanılmaz."
-                           Foreground="#777777" FontSize="11" Margin="0,0,0,8" TextWrapping="Wrap"/>
-                <UniformGrid Columns="5" Margin="0,0,0,10">
-                    <StackPanel Margin="0,0,6,0">
-                        <RadioButton x:Name="Stage1Active" GroupName="ActiveStage" Content="Kademe 1" FontSize="12" Checked="StageActive_Checked"/>
-                        <TextBox x:Name="Stage1Box" Style="{StaticResource StageBox}" Width="Auto" Margin="0,5,0,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,0,6,0">
-                        <RadioButton x:Name="Stage2Active" GroupName="ActiveStage" Content="Kademe 2" FontSize="12" Checked="StageActive_Checked"/>
-                        <TextBox x:Name="Stage2Box" Style="{StaticResource StageBox}" Width="Auto" Margin="0,5,0,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,0,6,0">
-                        <RadioButton x:Name="Stage3Active" GroupName="ActiveStage" Content="Kademe 3" FontSize="12" Checked="StageActive_Checked"/>
-                        <TextBox x:Name="Stage3Box" Style="{StaticResource StageBox}" Width="Auto" Margin="0,5,0,0"/>
-                    </StackPanel>
-                    <StackPanel Margin="0,0,6,0">
-                        <RadioButton x:Name="Stage4Active" GroupName="ActiveStage" Content="Kademe 4" FontSize="12" Checked="StageActive_Checked"/>
-                        <TextBox x:Name="Stage4Box" Style="{StaticResource StageBox}" Width="Auto" Margin="0,5,0,0"/>
-                    </StackPanel>
-                    <StackPanel>
-                        <RadioButton x:Name="Stage5Active" GroupName="ActiveStage" Content="Kademe 5" FontSize="12" Checked="StageActive_Checked"/>
-                        <TextBox x:Name="Stage5Box" Style="{StaticResource StageBox}" Width="Auto" Margin="0,5,0,0"/>
-                    </StackPanel>
-                </UniformGrid>
-                <Button x:Name="WriteStagesButton" Height="34" Content="Kademeleri Fareye Yaz"
-                        Click="WriteStagesButton_Click"/>
-            </StackPanel>
-        </Expander>
+                <!-- ================= Baslik ================= -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
 
-        <StackPanel Grid.Row="14" Orientation="Horizontal">
-            <CheckBox x:Name="AutostartCheck" Content="Windows ile başlat"
-                      Checked="AutostartCheck_Changed" Unchecked="AutostartCheck_Changed"/>
-            <CheckBox x:Name="TrayCheck" Content="Kapatınca tepsiye küçült" Margin="20,0,0,0"
-                      Checked="TrayCheck_Changed" Unchecked="TrayCheck_Changed"/>
-            <CheckBox x:Name="LowBatteryCheck" Content="Düşük pil uyarısı" Margin="20,0,0,0"
-                      ToolTip="Pil %20'nin altına düştüğünde (şarjda değilken) tepsi bildirimi göster"
-                      Checked="LowBatteryCheck_Changed" Unchecked="LowBatteryCheck_Changed"/>
-        </StackPanel>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,16,0">
+                        <TextBlock Text="RazerLite" FontFamily="{StaticResource DisplayFont}" FontSize="36" TextOptions.TextFormattingMode="Ideal" FontWeight="Bold"/>
+                        <TextBlock x:Name="DeviceSubtitle" Text="Cihaz aranıyor…" Foreground="{StaticResource Text2Brush}"
+                                   FontSize="14" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <Ellipse Width="7" Height="7" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="StatusText" Text="Hazırlanıyor..." Foreground="{StaticResource AccentBrush}" FontSize="13"/>
+                            <TextBlock Text="  ·  " Foreground="{StaticResource FaintBrush}" FontSize="13"/>
+                            <TextBlock x:Name="CurrentText" Text="Cihaz bağlanıyor..." Foreground="{StaticResource MutedBrush}"
+                                       FontSize="13" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </StackPanel>
 
-        <Grid Grid.Row="16">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition x:Name="DebugGapRow" Height="6"/>
-                <RowDefinition x:Name="DebugBodyRow" Height="Auto"/>
-            </Grid.RowDefinitions>
-            <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="8"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="Debug / Device Log" FontSize="13" Foreground="#AAAAAA"
-                           VerticalAlignment="Center"/>
-                <TextBlock Grid.Column="1" x:Name="DebugSwitchLabel" Text="Açık" FontSize="12"
-                           Foreground="#777777" VerticalAlignment="Center"/>
-                <ToggleButton x:Name="DebugLogSwitch"
-                              Grid.Column="3"
-                              Style="{StaticResource DarkSwitch}"
-                              ToolTip="Debug log ekranını göster / gizle"
-                              Checked="DebugLogSwitch_Changed"
-                              Unchecked="DebugLogSwitch_Changed"/>
-            </Grid>
-            <Grid x:Name="DebugLogPanel" Grid.Row="2" Height="200">
-                <TextBox x:Name="DebugBox"
-                         IsReadOnly="True"
-                         AcceptsReturn="True"
-                         TextWrapping="Wrap"
-                         VerticalScrollBarVisibility="Auto"
-                         HorizontalScrollBarVisibility="Disabled"
-                         FontFamily="Consolas"
-                         FontSize="11"
-                         Padding="10,10,28,10"
-                         Background="#101010"
-                         Foreground="#BDBDBD"
-                         BorderBrush="#303030"
-                         BorderThickness="1">
-                    <TextBox.Template>
-                        <ControlTemplate TargetType="{x:Type TextBox}">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="4"
-                                    SnapsToDevicePixels="True">
-                                <ScrollViewer x:Name="PART_ContentHost"
-                                              Padding="{TemplateBinding Padding}"
-                                              Focusable="False"/>
-                            </Border>
-                        </ControlTemplate>
-                    </TextBox.Template>
-                </TextBox>
-                <Button x:Name="ClearDebugButton"
-                        Style="{StaticResource IconButton}"
-                        Content="&#xEA99;"
-                        ToolTip="Logu temizle"
-                        HorizontalAlignment="Right"
-                        VerticalAlignment="Top"
-                        Margin="0,5,22,0"
-                        Click="ClearDebugButton_Click"/>
+                    <!-- Pil (isik ayri katmanda, yazi net kalir) -->
+                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                    <Border CornerRadius="18" Background="#101612" IsHitTestVisible="False">
+                        <Border.Effect>
+                            <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.14" BlurRadius="22" ShadowDepth="0"/>
+                        </Border.Effect>
+                    </Border>
+                    <Border CornerRadius="18" Padding="12,10,20,10"
+                            BorderBrush="{StaticResource AccentLineBrush}" BorderThickness="1">
+                        <Border.Background>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                <GradientStop Color="#16261A" Offset="0"/>
+                                <GradientStop Color="#101612" Offset="1"/>
+                            </LinearGradientBrush>
+                        </Border.Background>
+                        <StackPanel Orientation="Horizontal">
+                            <!-- Pil halkasi: yay koddan (SetBatteryRing) cizilir, rengi BatteryText ile ayni -->
+                            <Grid Width="42" Height="42" Margin="0,0,12,0">
+                                <Ellipse Stroke="#24302A" StrokeThickness="4"/>
+                                <Path x:Name="BatteryRingArc" StrokeThickness="4"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                      Stroke="{Binding Foreground, ElementName=BatteryText}">
+                                    <Path.Effect>
+                                        <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.6" BlurRadius="8" ShadowDepth="0"/>
+                                    </Path.Effect>
+                                </Path>
+                                <TextBlock x:Name="BatteryRingText" Text="—" FontSize="12" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Grid>
+                            <StackPanel VerticalAlignment="Center" MinWidth="70">
+                                <TextBlock x:Name="BatteryText" Text="" FontSize="15" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="LinkText" Text="" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,1,0,0"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    </Grid>
+
+                    <Rectangle Grid.Column="2" Width="1" Height="42" Fill="#262A2F" Margin="20,0"/>
+
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="TestButton" Style="{StaticResource DeepButton}" Height="46" Padding="18,0"
+                                ToolTip="Polling Rate Tester'ı aç" Click="TestButton_Click">
+                            <StackPanel Orientation="Horizontal">
+                                <Viewbox Width="17" Height="17" Margin="0,0,9,0">
+                                    <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoPulse}"/></Canvas>
+                                </Viewbox>
+                                <TextBlock Text="Hz Testi" FontSize="14"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="RefreshButton" Style="{StaticResource DeepButton}" Width="46" Height="46" Padding="0" Margin="10,0,0,0"
+                                ToolTip="Yenile" Click="RefreshButton_Click">
+                            <Viewbox Width="17" Height="17">
+                                <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoRefresh}"/></Canvas>
+                            </Viewbox>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- ======================= ANA SAYFA ======================= -->
+                <Grid Grid.Row="3" Visibility="{Binding IsChecked, ElementName=NavHome, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.2*"/>
+                        <ColumnDefinition Width="18"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Sol: DPI kart + kademeler (kademeler kalan yeri doldurur) -->
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="18"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <ContentControl Style="{StaticResource DeepHeroHost}" Padding="22,18,22,20">
+                            <Grid>
+                                <Border Width="230" Height="150" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-10,0"
+                                        Background="{StaticResource DotTexture}" OpacityMask="{StaticResource CornerFadeMask}" IsHitTestVisible="False"/>
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,16">
+                                        <Border DockPanel.Dock="Right" CornerRadius="10" Padding="11,6" BorderThickness="1"
+                                                BorderBrush="{StaticResource DeepCardEdge}" Background="#CC16191C" VerticalAlignment="Center"
+                                                ToolTip="Profiller arasında hızlı geçiş; tepsi menüsünden de seçilebilir">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Viewbox Width="12" Height="12" Margin="0,0,7,0">
+                                                    <Canvas Width="24" Height="24"><Path Style="{StaticResource IconAccent}" Data="{StaticResource IcoBolt}"/></Canvas>
+                                                </Viewbox>
+                                                <TextBlock Text="Hızlı geçiş: Ctrl+Alt+1…5" Foreground="{StaticResource Text2Brush}" FontSize="12"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Viewbox Style="{StaticResource DeepIcon}">
+                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoTarget}"/></Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="DPI &amp; Polling Ayarları" Style="{StaticResource DeepTitle}" FontSize="17" VerticalAlignment="Center"/>
+                                    </DockPanel>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="18"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Fare cizimi -->
+                                        <Viewbox Width="104" Height="146" VerticalAlignment="Center" IsHitTestVisible="False">
+                                            <Canvas Width="140" Height="195">
+                                                <Ellipse Canvas.Left="8" Canvas.Top="160" Width="124" Height="30" Stroke="#5CCB4A" StrokeThickness="6" Opacity="0.35">
+                                                    <Ellipse.Effect><BlurEffect Radius="10"/></Ellipse.Effect>
+                                                </Ellipse>
+                                                <Ellipse Canvas.Left="8" Canvas.Top="160" Width="124" Height="30" Stroke="#7BDB6A" StrokeThickness="1.2" Opacity="0.7"/>
+                                                <Path Data="M70,10 C40,10 24,36 24,74 L24,124 C24,154 45,174 70,174 C95,174 116,154 116,124 L116,74 C116,36 100,10 70,10 Z"
+                                                      StrokeThickness="1.3">
+                                                    <Path.Fill>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#30363C" Offset="0"/>
+                                                            <GradientStop Color="#181B1F" Offset="0.5"/>
+                                                            <GradientStop Color="#0C0D0F" Offset="1"/>
+                                                        </LinearGradientBrush>
+                                                    </Path.Fill>
+                                                    <Path.Stroke>
+                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                            <GradientStop Color="#5A626A" Offset="0"/>
+                                                            <GradientStop Color="#1C1F23" Offset="1"/>
+                                                        </LinearGradientBrush>
+                                                    </Path.Stroke>
+                                                    <Path.Effect>
+                                                        <DropShadowEffect Color="Black" Opacity="0.7" BlurRadius="18" ShadowDepth="6" Direction="290"/>
+                                                    </Path.Effect>
+                                                </Path>
+                                                <Path Data="M70,10 V74 M24,76 C46,84 94,84 116,76" Stroke="#0A0B0D" StrokeThickness="1.6"/>
+                                                <Path Data="M32,64 C32,40 44,22 62,15" Stroke="#66FFFFFF" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                                <Rectangle Canvas.Left="65" Canvas.Top="30" Width="10" Height="24" RadiusX="5" RadiusY="5"
+                                                           Fill="#0E1012" Stroke="#7BDB6A" StrokeThickness="1.2">
+                                                    <Rectangle.Effect>
+                                                        <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="0.9" BlurRadius="10" ShadowDepth="0"/>
+                                                    </Rectangle.Effect>
+                                                </Rectangle>
+                                                <Path Data="M29,92 C29,116 35,138 48,156" Stroke="#5CCB4A" StrokeThickness="2.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                                    <Path.Effect>
+                                                        <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="1" BlurRadius="12" ShadowDepth="0"/>
+                                                    </Path.Effect>
+                                                </Path>
+                                                <Ellipse Canvas.Left="64" Canvas.Top="122" Width="12" Height="12" Stroke="#5CCB4A" StrokeThickness="1.3">
+                                                    <Ellipse.Effect>
+                                                        <DropShadowEffect Color="{StaticResource AccentColor}" Opacity="1" BlurRadius="10" ShadowDepth="0"/>
+                                                    </Ellipse.Effect>
+                                                </Ellipse>
+                                            </Canvas>
+                                        </Viewbox>
+
+                                        <StackPanel Grid.Column="2">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="14"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="DPI Değeri" Style="{StaticResource FieldLabel}" FontSize="13"/>
+                                                    <Grid>
+                                                        <TextBox x:Name="DpiBox" Style="{StaticResource DeepInput}" Height="52" Text="800"
+                                                                 FontSize="22" FontWeight="SemiBold" Padding="16,0,56,0"
+                                                                 VerticalContentAlignment="Center" KeyDown="DpiBox_KeyDown"/>
+                                                        <Border HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"
+                                                                CornerRadius="6" Background="#262A2F" Padding="7,2" IsHitTestVisible="False">
+                                                            <TextBlock Text="DPI" Foreground="{StaticResource Text2Brush}" FontSize="11" FontWeight="SemiBold"/>
+                                                        </Border>
+                                                    </Grid>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2">
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+                                                        <Viewbox Width="14" Height="14" Margin="0,0,7,0">
+                                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource IconAccent}" Data="{StaticResource IcoPulse}"/></Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="Polling Rate" Foreground="{StaticResource Text2Brush}" FontSize="13"/>
+                                                    </StackPanel>
+                                                    <ComboBox x:Name="PollingBox" Style="{StaticResource DarkComboBox}" Height="52"
+                                                              FontSize="18" FontWeight="SemiBold" SelectedIndex="6">
+                                                        <ComboBoxItem Content="125 Hz" Tag="125"/>
+                                                        <ComboBoxItem Content="250 Hz" Tag="250"/>
+                                                        <ComboBoxItem Content="500 Hz" Tag="500"/>
+                                                        <ComboBoxItem Content="1000 Hz" Tag="1000"/>
+                                                        <ComboBoxItem Content="2000 Hz" Tag="2000"/>
+                                                        <ComboBoxItem Content="4000 Hz" Tag="4000"/>
+                                                        <ComboBoxItem Content="8000 Hz" Tag="8000"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <TextBlock Text="Profil Seçimi" Style="{StaticResource FieldLabel}" FontSize="13" Margin="0,16,0,7"/>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox x:Name="ProfileBox" Style="{StaticResource DarkComboBox}" Height="46" FontSize="15"
+                                                          SelectionChanged="ProfileBox_SelectionChanged"/>
+                                                <Button x:Name="SaveProfileButton" Grid.Column="1" Style="{StaticResource DeepButton}" Height="46" Padding="18,0" Margin="10,0,0,0"
+                                                        ToolTip="Yukarıdaki DPI ve Polling Rate değerlerini profil olarak kaydet.&#x0a;Yeni ad = yeni profil, mevcut bir profilin adı = o profili güncelle."
+                                                        Click="SaveProfileButton_Click">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Viewbox Width="16" Height="16" Margin="0,0,9,0">
+                                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoSave}"/></Canvas>
+                                                        </Viewbox>
+                                                        <TextBlock Text="Kaydet" FontSize="14"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button x:Name="DeleteProfileButton" Grid.Column="2" Style="{StaticResource DangerButton}" Width="46" Height="46" Padding="0"
+                                                        Margin="8,0,0,0" ToolTip="Seçili profili sil" BorderBrush="{StaticResource DeepCardEdge}"
+                                                        Click="DeleteProfileButton_Click">
+                                                    <Viewbox Width="16" Height="16">
+                                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoTrash}"/></Canvas>
+                                                    </Viewbox>
+                                                </Button>
+                                            </Grid>
+
+                                            <Button x:Name="ApplyButton" Style="{StaticResource DeepAccentButton}" Height="50" Margin="0,20,0,0"
+                                                    Click="ApplyButton_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Viewbox Width="17" Height="17" Margin="0,0,10,0">
+                                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" StrokeThickness="2.8" Data="{StaticResource IcoCheck}"/></Canvas>
+                                                    </Viewbox>
+                                                    <TextBlock Text="Uygula" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource AccentInkBrush}"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Grid>
+                        </ContentControl>
+
+                        <Expander x:Name="StagesExpander" Grid.Row="2" Style="{StaticResource DeepExpander}" IsExpanded="True"
+                                  Expanded="StagesExpander_Expanded" Collapsed="StagesExpander_Collapsed">
+                            <Expander.Header>
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Ellipse Width="7" Height="7" Fill="{StaticResource AccentBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock x:Name="StagesHeaderText" Text="—" Foreground="{StaticResource AccentBrush}"
+                                                   FontSize="13" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" StrokeThickness="2.4" Data="{StaticResource IcoBars}"/></Canvas>
+                                    </Viewbox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="DPI Kademeleri" Style="{StaticResource DeepTitle}"/>
+                                        <TextBlock Text="Faredeki DPI tuşuyla geçilen kademeler" Style="{StaticResource DeepSub}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </Expander.Header>
+                            <StackPanel>
+                                <UniformGrid Columns="5" Margin="0,0,0,16">
+                                    <ContentControl Style="{StaticResource DeepStageHost}">
+                                        <StackPanel>
+                                            <RadioButton x:Name="Stage1Active" GroupName="ActiveStage" Content="1" Style="{StaticResource DotRadio}" FontSize="13"
+                                                         Checked="StageActive_Checked"/>
+                                            <TextBox x:Name="Stage1Box" Style="{StaticResource DeepStageBox}"/>
+                                        </StackPanel>
+                                    </ContentControl>
+                                    <ContentControl Style="{StaticResource DeepStageHost}">
+                                        <StackPanel>
+                                            <RadioButton x:Name="Stage2Active" GroupName="ActiveStage" Content="2" Style="{StaticResource DotRadio}" FontSize="13"
+                                                         Checked="StageActive_Checked"/>
+                                            <TextBox x:Name="Stage2Box" Style="{StaticResource DeepStageBox}"/>
+                                        </StackPanel>
+                                    </ContentControl>
+                                    <ContentControl Style="{StaticResource DeepStageHost}">
+                                        <StackPanel>
+                                            <RadioButton x:Name="Stage3Active" GroupName="ActiveStage" Content="3" Style="{StaticResource DotRadio}" FontSize="13"
+                                                         Checked="StageActive_Checked"/>
+                                            <TextBox x:Name="Stage3Box" Style="{StaticResource DeepStageBox}"/>
+                                        </StackPanel>
+                                    </ContentControl>
+                                    <ContentControl Style="{StaticResource DeepStageHost}">
+                                        <StackPanel>
+                                            <RadioButton x:Name="Stage4Active" GroupName="ActiveStage" Content="4" Style="{StaticResource DotRadio}" FontSize="13"
+                                                         Checked="StageActive_Checked"/>
+                                            <TextBox x:Name="Stage4Box" Style="{StaticResource DeepStageBox}"/>
+                                        </StackPanel>
+                                    </ContentControl>
+                                    <ContentControl Style="{StaticResource DeepStageHost}">
+                                        <StackPanel>
+                                            <RadioButton x:Name="Stage5Active" GroupName="ActiveStage" Content="5" Style="{StaticResource DotRadio}" FontSize="13"
+                                                         Checked="StageActive_Checked"/>
+                                            <TextBox x:Name="Stage5Box" Style="{StaticResource DeepStageBox}"/>
+                                        </StackPanel>
+                                    </ContentControl>
+                                </UniformGrid>
+                                <Grid Margin="5,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Viewbox Style="{StaticResource InfoIcon}" Width="16" Height="16" Margin="0,1,10,0">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource IconStroke}" Stroke="{StaticResource MutedBrush}" Data="{StaticResource IcoInfo}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock Grid.Column="1" Style="{StaticResource HintText}" FontSize="12" Margin="0,0,16,0"
+                                               Text="Seçim anında fareye uygulanır. DPI değerlerini değiştirdiysen fareye yaz; boş bırakılan kademe kullanılmaz."/>
+                                    <Button x:Name="WriteStagesButton" Grid.Column="2" Style="{StaticResource DeepButton}" Height="44" Padding="16,0"
+                                            Click="WriteStagesButton_Click">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Viewbox Width="16" Height="16" Margin="0,0,9,0">
+                                                <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoUpload}"/></Canvas>
+                                            </Viewbox>
+                                            <TextBlock Text="Kademeleri Fareye Yaz" FontSize="13"/>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </StackPanel>
+                        </Expander>
+                    </Grid>
+
+                    <!-- Sag: cihaz kartlari (cihaz destekliyorsa gorunur; gorunen son kart kalan yeri doldurur,
+                         bkz. UpdateDeviceCardFill) -->
+                    <Grid x:Name="DeviceCardColumn" Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <ContentControl x:Name="SleepPanel" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Right" Style="{StaticResource DeepPill}">
+                                        <TextBlock x:Name="SleepValueText" Text="15 dk" Style="{StaticResource DeepPillText}"/>
+                                    </Border>
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoMoon}"/></Canvas>
+                                    </Viewbox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Boşta Uyku" Style="{StaticResource DeepTitle}"/>
+                                        <TextBlock Text="Hareket olmazsa fare bu süreden sonra uyur." Style="{StaticResource DeepSub}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <Slider x:Name="SleepSlider" Style="{StaticResource DeepSlider}" Margin="0,12,0,0"
+                                        Minimum="1" Maximum="15" SmallChange="1" LargeChange="1"
+                                        ValueChanged="SleepSlider_ValueChanged"/>
+                                <Grid>
+                                    <TextBlock Text="1 dk" Style="{StaticResource ScaleText}" Foreground="{StaticResource Text2Brush}" FontSize="12"/>
+                                    <TextBlock Text="15 dk" Style="{StaticResource ScaleText}" Foreground="{StaticResource Text2Brush}" FontSize="12" HorizontalAlignment="Right"/>
+                                </Grid>
+                            </StackPanel>
+                        </ContentControl>
+
+                        <ContentControl x:Name="LowPowerPanel" Grid.Row="1" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Right" Style="{StaticResource DeepPill}">
+                                        <TextBlock x:Name="LowPowerValueText" Text="%30" Style="{StaticResource DeepPillText}"/>
+                                    </Border>
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoLowPower}"/></Canvas>
+                                    </Viewbox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Düşük Güç" Style="{StaticResource DeepTitle}"/>
+                                        <TextBlock Text="Pil bu seviyenin altına inince güç tasarrufu." Style="{StaticResource DeepSub}"
+                                                   ToolTip="Kablosuzdayken pil bu yüzdenin altına düşünce fare düşük güce geçer."/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <Slider x:Name="LowPowerSlider" Style="{StaticResource DeepSlider}" Margin="0,12,0,0"
+                                        Minimum="5" Maximum="100" TickFrequency="5" SmallChange="5" LargeChange="5"
+                                        ValueChanged="LowPowerSlider_ValueChanged"/>
+                                <Grid>
+                                    <TextBlock Text="%5" Style="{StaticResource ScaleText}" FontSize="12"/>
+                                    <TextBlock Text="%100" Style="{StaticResource ScaleText}" FontSize="12" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <TextBlock x:Name="LowPowerWarning" Visibility="Collapsed" Style="{StaticResource HintText}"
+                                           Foreground="{StaticResource WarnBrush}" Margin="0,8,0,0"
+                                           Text="Yoklama 1000 Hz üzerindeyken bu eşik kapalı."/>
+                            </StackPanel>
+                        </ContentControl>
+
+                        <ContentControl x:Name="SurfacePanel" Grid.Row="2" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Right" Style="{StaticResource DeepPill}">
+                                        <TextBlock x:Name="SurfaceValueText" Text="2 mm" Style="{StaticResource DeepPillText}"/>
+                                    </Border>
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoTarget}"/></Canvas>
+                                    </Viewbox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Yüzey Kalibrasyonu" Style="{StaticResource DeepTitle}"/>
+                                        <TextBlock Text="Kaldırınca izlemeyi bırakma yüksekliği." Style="{StaticResource DeepSub}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <Grid Margin="-4,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <UniformGrid x:Name="SurfaceDistanceRow" Rows="1" Margin="0,0,14,0">
+                                        <RadioButton x:Name="SurfaceLow" GroupName="SurfaceDistance" Content="1 mm" Style="{StaticResource DeepSegRadio}"
+                                                     Checked="SurfaceDistance_Checked"/>
+                                        <RadioButton x:Name="SurfaceMid" GroupName="SurfaceDistance" Content="2 mm" Style="{StaticResource DeepSegRadio}"
+                                                     Checked="SurfaceDistance_Checked"/>
+                                        <RadioButton x:Name="SurfaceHigh" GroupName="SurfaceDistance" Content="3 mm" Style="{StaticResource DeepSegRadio}"
+                                                     Checked="SurfaceDistance_Checked"/>
+                                    </UniformGrid>
+                                    <CheckBox x:Name="SurfaceAsymmetric" Grid.Column="1" Content="Asimetrik Kesim" FontSize="14"
+                                              VerticalAlignment="Center" MinHeight="42"
+                                              Checked="SurfaceAsymmetric_Changed" Unchecked="SurfaceAsymmetric_Changed"/>
+                                </Grid>
+                                <Grid x:Name="SurfaceAsymmetricPanel" Visibility="Collapsed" Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="16"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <Grid Margin="0,0,0,2">
+                                            <TextBlock Text="Kaldırma" FontSize="13" Foreground="{StaticResource Text2Brush}" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="SurfaceLiftText" Text="13" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <Slider x:Name="SurfaceLiftSlider" Style="{StaticResource DeepSlider}"
+                                                Minimum="1" Maximum="26" SmallChange="1" LargeChange="1" ValueChanged="SurfaceStep_Changed"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <Grid Margin="0,0,0,2">
+                                            <TextBlock Text="İniş" FontSize="13" Foreground="{StaticResource Text2Brush}" VerticalAlignment="Center"/>
+                                            <TextBlock x:Name="SurfaceLandText" Text="12" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}"
+                                                       HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                        </Grid>
+                                        <Slider x:Name="SurfaceLandSlider" Style="{StaticResource DeepSlider}"
+                                                Minimum="1" Maximum="26" SmallChange="1" LargeChange="1" ValueChanged="SurfaceStep_Changed"/>
+                                    </StackPanel>
+                                </Grid>
+                                <DockPanel Margin="0,12,0,0">
+                                    <Viewbox Style="{StaticResource InfoIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource IconStroke}" Stroke="{StaticResource MutedBrush}" Data="{StaticResource IcoInfo}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock x:Name="SurfaceHint" Style="{StaticResource HintText}" FontSize="12"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </ContentControl>
+
+                        <ContentControl x:Name="DongleLedPanel" Grid.Row="3" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" VerticalAlignment="Stretch">
+                            <StackPanel>
+                                <DockPanel>
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoBulb}"/></Canvas>
+                                    </Viewbox>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Dongle LED" Style="{StaticResource DeepTitle}"/>
+                                        <TextBlock x:Name="LedHint" Style="{StaticResource DeepSub}" TextWrapping="Wrap" TextTrimming="None"/>
+                                    </StackPanel>
+                                </DockPanel>
+                                <UniformGrid Rows="1" Margin="-4,14,-4,0">
+                                    <RadioButton x:Name="LedConnection" GroupName="DongleLed" Content="Bağlantı" Style="{StaticResource DeepSegRadio}"
+                                                 Checked="DongleLed_Checked"/>
+                                    <RadioButton x:Name="LedBattery" GroupName="DongleLed" Content="Pil Durumu" Style="{StaticResource DeepSegRadio}"
+                                                 Checked="DongleLed_Checked"/>
+                                    <RadioButton x:Name="LedWarning" GroupName="DongleLed" Content="Yalnızca Düşük Pil" Style="{StaticResource DeepSegRadio}"
+                                                 Checked="DongleLed_Checked"/>
+                                </UniformGrid>
+                            </StackPanel>
+                        </ContentControl>
+                    </Grid>
+                </Grid>
+
+                <!-- ======================= AYARLAR ======================= -->
+                <Grid Grid.Row="3" Visibility="{Binding IsChecked, ElementName=NavSettings, Converter={StaticResource BoolToVis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="DebugGapRow" Height="18"/>
+                        <RowDefinition x:Name="DebugBodyRow" Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <UniformGrid Columns="2" Margin="-9,-9,-9,-9">
+                        <ContentControl Style="{StaticResource DeepCardHost}" Margin="9">
+                            <CheckBox x:Name="AutostartCheck" Checked="AutostartCheck_Changed" Unchecked="AutostartCheck_Changed">
+                                <DockPanel>
+                                    <Border Style="{StaticResource IconTileDeep}">
+                                        <Viewbox Width="20" Height="20">
+                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoWindows}"/></Canvas>
+                                        </Viewbox>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Windows ile başlat" Style="{StaticResource DeepTitle}" FontSize="15"/>
+                                        <TextBlock Text="Oturum açılınca RazerLite tepside başlar." Style="{StaticResource DeepSub}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </CheckBox>
+                        </ContentControl>
+                        <ContentControl Style="{StaticResource DeepCardHost}" Margin="9">
+                            <CheckBox x:Name="TrayCheck" Checked="TrayCheck_Changed" Unchecked="TrayCheck_Changed">
+                                <DockPanel>
+                                    <Border Style="{StaticResource IconTileDeep}">
+                                        <Viewbox Width="20" Height="20">
+                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoBolt}"/></Canvas>
+                                        </Viewbox>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Kapatınca tepsiye küçült" Style="{StaticResource DeepTitle}" FontSize="15"/>
+                                        <TextBlock Text="Pencereyi kapatmak uygulamayı sonlandırmaz." Style="{StaticResource DeepSub}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </CheckBox>
+                        </ContentControl>
+                        <ContentControl Style="{StaticResource DeepCardHost}" Margin="9">
+                            <CheckBox x:Name="LowBatteryCheck"
+                                      ToolTip="Pil %20'nin altına düştüğünde (şarjda değilken) tepsi bildirimi göster"
+                                      Checked="LowBatteryCheck_Changed" Unchecked="LowBatteryCheck_Changed">
+                                <DockPanel>
+                                    <Border Style="{StaticResource IconTileDeep}">
+                                        <Viewbox Width="20" Height="20">
+                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoBattery}"/></Canvas>
+                                        </Viewbox>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="Düşük pil uyarısı" Style="{StaticResource DeepTitle}" FontSize="15"/>
+                                        <TextBlock Text="Şarjda değilken pil %20'nin altına inince uyar." Style="{StaticResource DeepSub}"/>
+                                    </StackPanel>
+                                </DockPanel>
+                            </CheckBox>
+                        </ContentControl>
+                        <ContentControl Style="{StaticResource DeepCardHost}" Margin="9">
+                            <DockPanel>
+                                <ToggleButton x:Name="DebugLogSwitch" DockPanel.Dock="Right" Style="{StaticResource DarkSwitch}" VerticalAlignment="Center"
+                                              ToolTip="Debug log ekranını göster / gizle"
+                                              Checked="DebugLogSwitch_Changed" Unchecked="DebugLogSwitch_Changed"/>
+                                <Border Style="{StaticResource IconTileDeep}">
+                                    <Viewbox Width="20" Height="20">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoDoc}"/></Canvas>
+                                    </Viewbox>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Debug / Device Log" Style="{StaticResource DeepTitle}" FontSize="15"/>
+                                    <TextBlock x:Name="DebugSwitchLabel" Text="Açık" Style="{StaticResource DeepSub}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </ContentControl>
+                    </UniformGrid>
+
+                    <ContentControl x:Name="DebugLogPanel" Grid.Row="2" Style="{StaticResource DeepCardHost}" Padding="18,14,18,18">
+                        <DockPanel>
+                            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,12">
+                                <Button x:Name="ClearDebugButton" DockPanel.Dock="Right" Style="{StaticResource DeepButton}" Height="36" Padding="12,0"
+                                        ToolTip="Logu temizle" Click="ClearDebugButton_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Viewbox Width="14" Height="14" Margin="0,0,7,0">
+                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoTrash}"/></Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="Temizle" FontSize="13"/>
+                                    </StackPanel>
+                                </Button>
+                                <Viewbox Style="{StaticResource DeepIcon}" Width="22" Height="22">
+                                    <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoDoc}"/></Canvas>
+                                </Viewbox>
+                                <TextBlock Text="Cihaz Günlüğü" Style="{StaticResource DeepTitle}" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <TextBox x:Name="DebugBox"
+                                     IsReadOnly="True"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Disabled"
+                                     FontFamily="Cascadia Mono, Consolas"
+                                     FontSize="12"
+                                     Padding="14,10,14,10"
+                                     Background="#0A0B0D"
+                                     Foreground="#A9B0B6"
+                                     BorderBrush="#1E2226"
+                                     BorderThickness="1">
+                                <TextBox.Resources>
+                                    <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}"/>
+                                </TextBox.Resources>
+                                <TextBox.Template>
+                                    <ControlTemplate TargetType="{x:Type TextBox}">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="12"
+                                                SnapsToDevicePixels="True">
+                                            <ScrollViewer x:Name="PART_ContentHost"
+                                                          Margin="0,4,4,4"
+                                                          Padding="{TemplateBinding Padding}"
+                                                          Focusable="False"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </TextBox.Template>
+                            </TextBox>
+                        </DockPanel>
+                    </ContentControl>
+                </Grid>
+
+                <!-- ======================= HAKKINDA ======================= -->
+                <Grid Grid.Row="3" Visibility="{Binding IsChecked, ElementName=NavAbout, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.2*"/>
+                        <ColumnDefinition Width="18"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ContentControl Style="{StaticResource DeepHeroHost}" Padding="28,26" VerticalAlignment="Stretch">
+                        <Grid>
+                            <Border Width="260" Height="180" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-12,-16,0"
+                                    Background="{StaticResource DotTexture}" OpacityMask="{StaticResource CornerFadeMask}" IsHitTestVisible="False"/>
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="64" Height="64" CornerRadius="19" BorderBrush="{StaticResource AccentLineBrush}" BorderThickness="1">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#173119" Offset="0"/>
+                                                <GradientStop Color="#0E1610" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <TextBlock Text="R" FontFamily="{StaticResource DisplayFont}" FontSize="34" TextOptions.TextFormattingMode="Ideal" FontWeight="Bold"
+                                                   Foreground="{StaticResource AccentBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,3"/>
+                                    </Border>
+                                    <StackPanel Margin="18,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock Text="RazerLite" FontFamily="{StaticResource DisplayFont}" FontSize="28" TextOptions.TextFormattingMode="Ideal" FontWeight="Bold"/>
+                                        <TextBlock Text="Sürüm 0.16" Foreground="{StaticResource AccentBrush}" FontSize="14" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <TextBlock Margin="0,22,0,0" Foreground="{StaticResource Text2Brush}" FontSize="14" TextWrapping="Wrap" LineHeight="22"
+                                           Text="Razer Synapse kurmadan DPI, polling rate, DPI kademeleri, uyku, düşük güç, yüzey kalibrasyonu ve dongle LED ayarlarını yönetmek için hafif bir araç. Arka planda tepside çalışır, kısayollarla profil değiştirir."/>
+
+                                <Border Margin="0,24,0,0" CornerRadius="12" Padding="16,14" BorderThickness="1" BorderBrush="{StaticResource DeepCardEdge}" Background="#99121417">
+                                    <StackPanel>
+                                        <TextBlock Text="Kısayollar" Style="{StaticResource DeepTitle}" FontSize="14"/>
+                                        <Grid Margin="0,10,0,0">
+                                            <TextBlock Text="Profil 1…5'e geç" Foreground="{StaticResource Text2Brush}" FontSize="13"/>
+                                            <TextBlock Text="Ctrl + Alt + 1…5" Foreground="{StaticResource AccentBrush}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                        <Grid Margin="0,8,0,0">
+                                            <TextBlock Text="Hızlı menü" Foreground="{StaticResource Text2Brush}" FontSize="13"/>
+                                            <TextBlock Text="Tepsi simgesine sağ tık" Foreground="{StaticResource AccentBrush}" FontSize="13" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+
+                                <Button x:Name="ProjectLinkButton" Style="{StaticResource DeepButton}" Height="44" Padding="18,0" Margin="0,22,0,0"
+                                        HorizontalAlignment="Left" ToolTip="github.com/zeugmass/RazerLite" Click="ProjectLinkButton_Click">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Viewbox Width="16" Height="16" Margin="0,0,9,0">
+                                            <Canvas Width="24" Height="24"><Path Style="{StaticResource BtnIconStroke}" Data="{StaticResource IcoLink}"/></Canvas>
+                                        </Viewbox>
+                                        <TextBlock Text="Proje sayfasını aç" FontSize="14"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </ContentControl>
+
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="18"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <ContentControl Style="{StaticResource DeepCardHost}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,14">
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoTarget}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Bağlı Cihaz" Style="{StaticResource DeepTitle}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <TextBlock Text="Cihaz" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
+                                    <TextBlock Text="{Binding Text, ElementName=DeviceSubtitle}" FontSize="13" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <TextBlock Text="Durum" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
+                                    <TextBlock Text="{Binding Text, ElementName=LinkText}" Foreground="{StaticResource AccentBrush}" FontSize="13" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <TextBlock Text="Pil" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
+                                    <TextBlock Text="{Binding Text, ElementName=BatteryText}" FontSize="13" HorizontalAlignment="Right"/>
+                                </Grid>
+                                <Grid>
+                                    <TextBlock Text="Ayar" Foreground="{StaticResource MutedBrush}" FontSize="13"/>
+                                    <TextBlock Text="{Binding Text, ElementName=CurrentText}" FontSize="13" HorizontalAlignment="Right"/>
+                                </Grid>
+                            </StackPanel>
+                        </ContentControl>
+
+                        <ContentControl Grid.Row="2" Style="{StaticResource DeepCardHost}">
+                            <StackPanel>
+                                <DockPanel Margin="0,0,0,14">
+                                    <Viewbox Style="{StaticResource DeepIcon}">
+                                        <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoCheck}"/></Canvas>
+                                    </Viewbox>
+                                    <TextBlock Text="Desteklenen Cihazlar" Style="{StaticResource DeepTitle}" VerticalAlignment="Center"/>
+                                </DockPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource AccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="HyperPolling Wireless Dongle" FontSize="13"/>
+                                    <TextBlock Text="  1532:00B3" Foreground="{StaticResource FaintBrush}" FontSize="12" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource AccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="DeathAdder V3 Pro" FontSize="13"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource AccentBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="Viper V3 Pro" FontSize="13"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse Width="7" Height="7" Fill="{StaticResource WarnBrush}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="DeathAdder V4 Pro" FontSize="13"/>
+                                    <TextBlock Text="  test edilmedi" Foreground="{StaticResource FaintBrush}" FontSize="12" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </ContentControl>
+                    </Grid>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>

@@ -97,7 +97,7 @@ internal sealed class TrayIcon : IDisposable
         {
             int slot = i + 1;
             var p = profiles[i];
-            var item = new WF.ToolStripMenuItem($"{p.Name}  ·  {p.Dpi} DPI / {p.Hz} Hz")
+            var item = new WF.ToolStripMenuItem($"{p.Name}  ·  {p.Dpi} DPI / {p.RatesText}")
             {
                 ShortcutKeyDisplayString = HotKeys.Label(slot),
             };

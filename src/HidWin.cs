@@ -104,6 +104,9 @@ internal static class HidWin
         /// </summary>
         public bool? ExtendedPolling { get; set; }
 
+        /// <summary>Bu baglantida cihaz modu 3 (surucu modu) yazildi veya cihaz desteklemiyor.</summary>
+        public bool DriverModeApplied { get; set; }
+
         public Device(SafeFileHandle handle, string path)
         {
             Handle = handle;
@@ -128,6 +131,7 @@ internal static class HidWin
 
             Handle = handle;
             Path = path;
+            DriverModeApplied = false; // tutamak yenilendi; mod tekrar yazilir
             var info = Describe(PidFromPath(path));
             if (info.Pid != Info.Pid)
             {
