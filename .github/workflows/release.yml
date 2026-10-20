@@ -6,6 +6,8 @@ on:
   push:
     tags:
       - "v*"
+  # Elle calistirma: yalnizca derler (deneme), release olusturmaz.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -14,9 +16,9 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "8.0.x"
 
@@ -24,12 +26,17 @@ jobs:
         shell: pwsh
         env:
           TAG: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          $version = $env:TAG.TrimStart('v')
-          dotnet publish src/RazerLite.csproj -c Release -o out -p:Version=$version --nologo
+          # Etiketle calisirken surum etiketten, elle calisirken csproj'daki <Version> kullanilir.
+          $extra = @()
+          if ($env:IS_TAG -eq 'true') { $extra += "-p:Version=$($env:TAG.TrimStart('v'))" }
+          dotnet publish src/RazerLite.csproj -c Release -o out --nologo @extra
           if (-not (Test-Path out/RazerLite.exe)) { throw "out/RazerLite.exe olusmadi" }
+          (Get-Item out/RazerLite.exe).VersionInfo.FileVersion
 
       - name: Release olustur
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           TAG: ${{ github.ref_name }}
