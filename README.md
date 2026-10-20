@@ -1,4 +1,4 @@
-# RazerLite 0.16
+# RazerLite 0.17
 
 Razer HyperPolling Wireless Dongle (`1532:00B3`) ve DeathAdder V3 Pro / Viper V3 Pro için
 Synapse'siz DPI / polling rate aracı. Tek dosya `RazerLite.exe`, Windows HID API (`HidD_SetFeature`) üzerinden konuşur;

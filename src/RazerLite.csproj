@@ -8,7 +8,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>RazerLite</AssemblyName>
     <RootNamespace>RazerLite</RootNamespace>
-    <Version>0.16.0</Version>
+    <Version>0.17.0</Version>
     <ApplicationIcon>razerlite.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
