@@ -39,6 +39,12 @@ public sealed class Settings
     /// <summary>Dusuk pil esigi (varsayilan %20). 5–50 arasi tutulur.</summary>
     public int LowBatteryPercent { get; set; } = 20;
 
+    /// <summary>Acilista GitHub'da yeni RazerLite surumu var mi bak (gunde en fazla bir kez).</summary>
+    public bool AutoCheckUpdates { get; set; } = true;
+
+    /// <summary>Son program guncellemesi denetimi (UTC); gunluk sinir icin.</summary>
+    public DateTime? LastUpdateCheckUtc { get; set; }
+
     [JsonIgnore]
     public static string Directory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RazerLite");

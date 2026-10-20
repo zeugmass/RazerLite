@@ -34,7 +34,16 @@ public partial class App : Application
         };
 
         // Tek ornek: ikinci kopya acilirsa ilk kopyanin penceresini one getir ve cik.
+        // Guncelleme sonrasi (--updated) eski surec kilidi birakana kadar bekle; o kapanirken biz aciliyoruz.
+        bool afterUpdate = e.Args.Any(a => string.Equals(a, Updater.UpdatedArg, StringComparison.OrdinalIgnoreCase));
         _singleInstance = new Mutex(initiallyOwned: true, MutexName, out bool isFirst);
+        for (int wait = 0; !isFirst && afterUpdate && wait < 50; wait++)
+        {
+            _singleInstance.Dispose();
+            Thread.Sleep(300);
+            _singleInstance = new Mutex(initiallyOwned: true, MutexName, out isFirst);
+        }
+
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
         if (!isFirst)
         {
@@ -42,6 +51,8 @@ public partial class App : Application
             Shutdown();
             return;
         }
+
+        Updater.CleanupOldExe();
 
         bool startHidden = e.Args.Any(a => string.Equals(a, Autostart.MinimizedArg, StringComparison.OrdinalIgnoreCase));
 

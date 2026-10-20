@@ -1,0 +1,40 @@
+# v0.17.0 gibi bir etiket pushlaninca RazerLite.exe'yi derler ve GitHub release'ine ekler.
+# Programdaki "Guncellemeleri denetle" bu release'leri okur (Updater.cs).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish (surum etiketten)
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          dotnet publish src/RazerLite.csproj -c Release -o out -p:Version=$version --nologo
+          if (-not (Test-Path out/RazerLite.exe)) { throw "out/RazerLite.exe olusmadi" }
+
+      - name: Release olustur
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ghArgs = @($env:TAG, 'out/RazerLite.exe', '--title', "RazerLite $env:TAG", '--generate-notes')
+          if ($env:TAG.Contains('-')) { $ghArgs += '--prerelease' }
+          gh release create @ghArgs

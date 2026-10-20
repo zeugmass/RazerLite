@@ -1,3 +1,8 @@
+using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
+
 namespace RazerLite;
 
 internal static class Protocol
@@ -111,12 +116,22 @@ internal static class Protocol
     /// kabul edip yeniden numaralandigi anlamina gelir, komutu tekrar gondermek gerekmez.
     /// BUSY ise komutun kabul edilmedigi anlamina gelir ve her zaman tekrar gonderilir.
     /// </param>
+    /// <param name="transactionId">Verilirse bu deger, yoksa cihazin transaction ID'si (DeviceProbe) kullanilir.</param>
     public static async Task<byte[]> RequestAsync(
         HidWin.Device device,
         byte[] report,
         int budgetMs = DefaultBudgetMs,
-        bool resendOnTimeout = true)
+        bool resendOnTimeout = true,
+        byte? transactionId = null)
     {
+        // Transaction ID (bayt 1) CRC'ye dahil degil; paketi yeniden kurmadan degistirilebilir.
+        byte tx = transactionId ?? device.TransactionId;
+        if (report[1] != tx)
+        {
+            report = (byte[])report.Clone();
+            report[1] = tx;
+        }
+
         var started = Environment.TickCount64;
         byte[]? last = null;
 
@@ -515,6 +530,246 @@ internal static class Protocol
 
         var reply = await RequestAsync(device, MakeReport(0x01, 0x07, 0x10, [mode]));
         return reply[0];
+    }
+
+    // Yazilim surumu. Synapse getExtendedFirmwareVersion: [boyut 4, sinif 0x00, komut 0x87].
+    // Dock (dongle) surumu getDockExtendedFirmwareVersion: [4, 0x00, 0x93].
+    // Yanit: major.minor.internal.reserved.
+    // Indirilecek paket, urun arayuzundeki latestVersionInfo icinden deviceType "mouse" kaydidir.
+    // Klavye paketi ayni listede durur ve secilmez. Zip yalnizca indirilir, cihaza yazilmaz.
+    public readonly record struct FirmwareVersion(int Major, int Minor, int Internal, int Reserved)
+    {
+        public string Text => $"{Major}.{Minor}.{Internal}.{Reserved}";
+
+        public static FirmwareVersion FromReply(byte[] reply) =>
+            new(reply[8], reply[9], reply[10], reply[11]);
+    }
+
+    public sealed record FirmwareRelease(string Version, string Url);
+
+    public static async Task<(FirmwareVersion? Version, byte Status)> GetExtendedFirmwareAsync(HidWin.Device device)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x04, 0x00, 0x87, [0x00, 0x00, 0x00, 0x00]));
+        if (!IsSuccess(reply[0]))
+        {
+            return (null, reply[0]);
+        }
+
+        return (FirmwareVersion.FromReply(reply), reply[0]);
+    }
+
+    public static async Task<(FirmwareVersion? Version, byte Status)> GetDockFirmwareAsync(HidWin.Device device)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x04, 0x00, 0x93, [0x00, 0x00, 0x00, 0x00]));
+        if (!IsSuccess(reply[0]))
+        {
+            return (null, reply[0]);
+        }
+
+        return (FirmwareVersion.FromReply(reply), reply[0]);
+    }
+
+    /// <summary>
+    /// Synapse karsilastirmasi: esit veya cihaz daha yeniyse guncelleme yoktur.
+    /// Dört parça soldan sağa sayi olarak karsilastirilir.
+    /// </summary>
+    public static bool FirmwareIsNewer(string latest, string current)
+    {
+        var next = latest.Split('.');
+        var now = current.Split('.');
+        int count = Math.Max(next.Length, now.Length);
+        for (int i = 0; i < count; i++)
+        {
+            int l = i < next.Length && int.TryParse(next[i], out var lv) ? lv : 0;
+            int c = i < now.Length && int.TryParse(now[i], out var cv) ? cv : 0;
+            if (l != c)
+            {
+                return l > c;
+            }
+        }
+
+        return false;
+    }
+
+    private static readonly HttpClient FirmwareClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(45),
+    };
+
+    private static readonly Dictionary<string, string> FirmwareScriptCache = new();
+    private static readonly object FirmwareCacheGate = new();
+
+    /// <summary>
+    /// Synapse urun sayfasindaki derlenmis arayuzden, deviceType "mouse" paketini okur.
+    /// Fare govdesi urun 182, dongle paketi urun 179. Kayitta paket yoksa null.
+    /// </summary>
+    public static async Task<FirmwareRelease?> GetMouseFirmwarePackageAsync(int productId)
+    {
+        var pageUrl = $"https://apps.razer.com/synapse/products/{productId}/ui/index.html";
+        using var page = await FirmwareClient.GetAsync(pageUrl);
+        if (!page.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var html = await page.Content.ReadAsStringAsync();
+        var script = Regex.Match(html, @"src=""./static/js/(main\.[0-9a-f]+\.js)""");
+        if (!script.Success)
+        {
+            return null;
+        }
+
+        var scriptUrl = $"https://apps.razer.com/synapse/products/{productId}/ui/static/js/{script.Groups[1].Value}";
+        string? js;
+        lock (FirmwareCacheGate)
+        {
+            FirmwareScriptCache.TryGetValue(scriptUrl, out js);
+        }
+
+        if (js is null)
+        {
+            js = await FirmwareClient.GetStringAsync(scriptUrl);
+            lock (FirmwareCacheGate)
+            {
+                FirmwareScriptCache[scriptUrl] = js;
+            }
+        }
+
+        return ExtractMousePackage(js);
+    }
+
+    /// <summary>
+    /// En yakin latestVersion kaydindan fare paketini alir. Klavye kaydi ayni pencerede kalsa da
+    /// mouse deviceType'tan onceki ilk latestVersion kullanilir.
+    /// </summary>
+    private static FirmwareRelease? ExtractMousePackage(string js)
+    {
+        int from = 0;
+        while (from < js.Length)
+        {
+            int typeAt = js.IndexOf("deviceType:\"mouse\"", from, StringComparison.Ordinal);
+            if (typeAt < 0)
+            {
+                return null;
+            }
+
+            int objAt = js.LastIndexOf("{latestVersion:\"", typeAt, StringComparison.Ordinal);
+            if (objAt >= 0 && typeAt - objAt <= 600)
+            {
+                var window = js.Substring(objAt, typeAt - objAt);
+                var version = Regex.Match(window, @"^\{latestVersion:""(\d+\.\d+\.\d+\.\d+)""");
+                var url = Regex.Match(
+                    window,
+                    @"releaseUrl:""(https://app-assets\.razer\.com/files/synapse/devices/\d+/FWUpdate/[^""]+\.zip)""");
+                if (version.Success && url.Success)
+                {
+                    return new FirmwareRelease(version.Groups[1].Value, url.Groups[1].Value);
+                }
+            }
+
+            from = typeAt + 16;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Paketi app-assets.razer.com adresinden indirir, SHA256 basligini dogrular ve kaydeder.
+    /// </summary>
+    public static async Task<string> DownloadFirmwarePackageAsync(string url, string directory)
+    {
+        if (!IsFirmwarePackageUrl(url, out var uri))
+        {
+            throw new InvalidOperationException("Paket adresi beklenen Razer adresi değil.");
+        }
+
+        var name = Path.GetFileName(uri.LocalPath);
+        if (string.IsNullOrEmpty(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            throw new InvalidOperationException("Paket adı geçersiz.");
+        }
+
+        Directory.CreateDirectory(directory);
+        var destination = Path.Combine(directory, name);
+        var partial = destination + ".part";
+        using var response = await FirmwareClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException("Paket indirilemedi.");
+        }
+
+        var finalHost = response.RequestMessage?.RequestUri?.Host;
+        if (finalHost is null || !finalHost.Equals("app-assets.razer.com", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Paket başka bir adrese yönlendi.");
+        }
+
+        var length = response.Content.Headers.ContentLength;
+        if (length is null or <= 0 or > 64 * 1024 * 1024)
+        {
+            throw new InvalidOperationException("Paket boyutu beklenmiyor.");
+        }
+
+        if (!response.Headers.TryGetValues("x-amz-meta-sha256", out var hashes))
+        {
+            throw new InvalidOperationException("Paket doğrulama bilgisi yok.");
+        }
+
+        var expected = hashes.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(expected))
+        {
+            throw new InvalidOperationException("Paket doğrulama bilgisi yok.");
+        }
+
+        try
+        {
+            await using (var input = await response.Content.ReadAsStreamAsync())
+            await using (var output = File.Create(partial))
+            {
+                await input.CopyToAsync(output);
+            }
+
+            if (new FileInfo(partial).Length != length)
+            {
+                throw new InvalidOperationException("İndirme yarım kaldı.");
+            }
+
+            await using (var file = File.OpenRead(partial))
+            {
+                var hash = await SHA256.HashDataAsync(file);
+                if (!Convert.ToHexString(hash).Equals(expected, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Paket doğrulaması tutmadı.");
+                }
+            }
+
+            File.Move(partial, destination, overwrite: true);
+            return destination;
+        }
+        catch
+        {
+            if (File.Exists(partial))
+            {
+                File.Delete(partial);
+            }
+
+            throw;
+        }
+    }
+
+    private static bool IsFirmwarePackageUrl(string url, out Uri uri)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out uri!)
+            && uri.Scheme == Uri.UriSchemeHttps
+            && uri.Host.Equals("app-assets.razer.com", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath.Contains("/files/synapse/devices/", StringComparison.Ordinal)
+            && uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        uri = null!;
+        return false;
     }
 
     // Bos birakma uykusu. Synapse getTimeToSleep / setTimeToSleep:

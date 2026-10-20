@@ -91,12 +91,32 @@ internal static class HidWin
             ? info
             : new DeviceInfo(pid, $"Razer PID {pid:X4}", LinkMode.Unknown);
 
+    /// <summary>
+    /// Bu oturumda DeviceProbe'un buldugu, varsayilandan (tx 0x1F, arayuz mi_00) farkli degerler; PID basina.
+    /// Open / ReconnectAsync ayni arayuzu, RequestAsync ayni transaction ID'yi kullansin diye burada tutulur.
+    /// </summary>
+    public static readonly Dictionary<int, byte> TransactionOverrides = new();
+    public static readonly Dictionary<int, string> InterfaceOverrides = new();
+
+    public const string DefaultInterface = "mi_00";
+
+    /// <summary>Yoldaki USB arayuz numarasi ("mi_00", "mi_02" ...); yoksa bos.</summary>
+    public static string InterfaceOf(string path)
+    {
+        var p = path.ToLowerInvariant();
+        int i = p.IndexOf("mi_", StringComparison.Ordinal);
+        return i >= 0 && i + 5 <= p.Length ? p.Substring(i, 5) : "";
+    }
+
     public sealed class Device : IDisposable
     {
         public SafeFileHandle Handle { get; private set; }
         public string Path { get; private set; }
         public DeviceInfo Info { get; private set; }
         public int Pid => Info.Pid;
+
+        /// <summary>Komutlarda kullanilan transaction ID (varsayilan 0x1F; tarama baska bir deger bulduysa o).</summary>
+        public byte TransactionId => TransactionOverrides.TryGetValue(Pid, out var tx) ? tx : Protocol.Tx;
 
         /// <summary>
         /// null: henuz bilinmiyor; true: 0x00/0x40-0xC0 genisletilmis polling (125-8000 Hz);
@@ -164,10 +184,28 @@ internal static class HidWin
     private static bool IsControlPath(string path)
     {
         var p = path.ToLowerInvariant();
+        var iface = InterfaceOverrides.TryGetValue(PidFromPath(p), out var over) ? over : DefaultInterface;
         return p.Contains("vid_1532")
             && p.Contains("pid_")
-            && p.Contains("mi_00")
+            && p.Contains(iface)
             && !p.Contains("col");
+    }
+
+    /// <summary>Tum Razer (VID 1532) HID yollari; tanilama raporu ve arayuz taramasi icin.</summary>
+    public static List<string> ListRazerPaths() =>
+        ListPaths(p => p.ToLowerInvariant().Contains("vid_1532"));
+
+    /// <summary>Paylasimli acar; acilamazsa null (arayuz taramasinda kullanilir).</summary>
+    public static Device? TryOpenPath(string path)
+    {
+        var handle = CreateFile(path, 0, FileShareRead | FileShareWrite, IntPtr.Zero, OpenExisting, 0, IntPtr.Zero);
+        if (handle is { IsInvalid: false })
+        {
+            return new Device(handle, path);
+        }
+
+        handle?.Dispose();
+        return null;
     }
 
     /// <summary>
@@ -198,7 +236,9 @@ internal static class HidWin
             .ToList();
     }
 
-    private static List<string> ListControlPathsRaw()
+    private static List<string> ListControlPathsRaw() => ListPaths(IsControlPath);
+
+    private static List<string> ListPaths(Func<string, bool> filter)
     {
         var guid = HidGuid;
         var info = SetupDiGetClassDevs(ref guid, IntPtr.Zero, IntPtr.Zero, DigcfPresent | DigcfDeviceInterface);
@@ -235,7 +275,7 @@ internal static class HidWin
                     }
 
                     var path = Marshal.PtrToStringUni(IntPtr.Add(detail, 4));
-                    if (!string.IsNullOrEmpty(path) && IsControlPath(path))
+                    if (!string.IsNullOrEmpty(path) && filter(path))
                     {
                         paths.Add(path);
                     }

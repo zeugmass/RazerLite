@@ -12,7 +12,8 @@ namespace RazerLite;
 
 public partial class MainWindow : Window
 {
-    public const string AppTitle = "RazerLite 0.16";
+    /// <summary>"RazerLite 0.16"; surum RazerLite.csproj &lt;Version&gt;'dan gelir (AppInfo).</summary>
+    public static readonly string AppTitle = "RazerLite " + AppInfo.VersionText;
 
     private HidWin.Device? _device;
     private bool _busy;
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
     private bool _forceReconnect;     // uyku/uyanma sonrasi handle olmus olabilir; path ayni olsa bile yeniden ac
     private int _resumeRetries;       // uyanma sonrasi cihaz henuz yoksa kac kez daha denenecek
     private int? _lowBatteryWarnedAt; // son uyarinin yapildigi %; sarj/yukselince sifirlanir
+    private DeviceProbe.Result? _probe; // son baglantidaki salt-okuma tarama (tanilama raporu icin)
     private bool _lowBatteryDeferLogged;
 
     private static readonly Brush GreenBrush = new SolidColorBrush(Color.FromRgb(0x6C, 0xC2, 0x5C));
@@ -48,6 +50,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        Title = AppTitle;
+        SidebarVersionText.Text = "v" + AppInfo.VersionText;
+        AboutVersionText.Text = "Sürüm " + AppInfo.VersionText;
 
         _settings = Settings.Load();
         // Kayit defteri gercek durumdur; ayar dosyasini ona esitle.
@@ -59,6 +64,13 @@ public partial class MainWindow : Window
         // USB tak/cikar olaylarini toplayip 1 sn sonra tek seferde degerlendir.
         _deviceChangeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _deviceChangeTimer.Tick += DeviceChangeTimer_Tick;
+
+        _firmwareStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(8) };
+        _firmwareStatusTimer.Tick += (_, _) =>
+        {
+            _firmwareStatusTimer.Stop();
+            ShowFirmwareStatus("");
+        };
 
         // Windows kapanirken/oturum kapanirken tepsiye kucultme yerine gercekten kapan.
         Application.Current.SessionEnding += (_, _) => _exiting = true;
@@ -234,6 +246,7 @@ public partial class MainWindow : Window
         Log("========================================");
 
         await ConnectAsync();
+        MaybeAutoCheckForUpdate();
     }
 
     /// <summary>Uygun Razer cihazini (kablolu fare > dongle > kablosuz) acar ve okur. Cihaz yoksa bekleme durumuna gecer.</summary>
@@ -248,6 +261,13 @@ public partial class MainWindow : Window
             Log($"DEVICE -> {_device.Info.Title} (VID=1532 PID={_device.Pid:X4})");
             Log($"HID CONNECTION -> READY");
             Log($"PATH -> {_device.Path}");
+
+            // Salt-okuma tarama: transaction ID / arayuz dogru mu (bilinen cihazlarda tek okuma).
+            _probe = await DeviceProbe.RunAsync(_device, Log);
+            if (_probe.UsedFallback)
+            {
+                Log($"PATH -> {_device.Path}");
+            }
 
             // Ilk okuma. Windows acilisinda dongle hemen gorunur, fare telsizi birkac saniye sonra gelir.
             // Synapse bu arada bekleyip kendisi tekrar dener; kullanicidan Yenile istemez.
@@ -273,6 +293,7 @@ public partial class MainWindow : Window
     private void EnterWaitingState()
     {
         _batteryTimer.Stop();
+        _probe = null;
         DeviceSubtitle.Text = "Cihaz bekleniyor…";
         SetLinkIcon(false);
         StatusText.Text = "Cihaz bulunamadı";
@@ -290,6 +311,13 @@ public partial class MainWindow : Window
         _lowPowerPercent = null;
         SurfacePanel.Visibility = Visibility.Collapsed;
         DongleLedPanel.Visibility = Visibility.Collapsed;
+        _firmwareGeneration++;
+        _mouseFirmware = null;
+        _dongleFirmware = null;
+        FirmwareMouseText.Text = "—";
+        FirmwareDongleText.Text = "—";
+        ShowFirmwareStatus("");
+        FirmwareButton.IsEnabled = false;
         _lastBattery = null;
         _lowBatteryWarnedAt = null;
         UpdateTrayToolTip();
@@ -605,6 +633,7 @@ public partial class MainWindow : Window
             AutostartCheck.IsChecked = _settings.StartWithWindows;
             TrayCheck.IsChecked = _settings.MinimizeToTray;
             LowBatteryCheck.IsChecked = _settings.LowBatteryWarn;
+            AutoUpdateCheck.IsChecked = _settings.AutoCheckUpdates;
             DebugLogSwitch.IsChecked = _settings.ShowDebugLog;
             ApplyDebugLogVisibility(_settings.ShowDebugLog);
             _tray?.SetChecks(_settings.StartWithWindows, _settings.MinimizeToTray);
@@ -706,6 +735,11 @@ public partial class MainWindow : Window
     private int _sleepWriteGeneration;
     private int? _lowPowerPercent;
     private int _lowPowerWriteGeneration;
+    private string? _mouseFirmware;
+    private string? _dongleFirmware;
+    private bool _firmwareBusy;
+    private int _firmwareGeneration;
+    private readonly DispatcherTimer _firmwareStatusTimer;
     private int _surfaceMm = 2;
     private bool _surfaceAsymmetric;
     private int _surfaceLift = 13;
@@ -726,6 +760,35 @@ public partial class MainWindow : Window
         if (Height > available)
         {
             Height = available;
+        }
+    }
+
+    /// <summary>
+    /// Sayfa icerigi buyudugunde (uyari satiri, asimetrik kaydiricilar, sayfa degisimi) pencere calisma alanina
+    /// kadar uzar. Yalnizca icerik buyuyunce tepki verir; kullanici pencereyi elle kucultuyorsa onunla
+    /// cekismez, o durumda kaydirma cubugu cikar.
+    /// </summary>
+    private void PageScroller_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (e.ExtentHeightChange > 0 && PageScroller.ScrollableHeight > 0.5 && WindowState == WindowState.Normal)
+        {
+            GrowToFitPage();
+        }
+    }
+
+    private void GrowToFitPage()
+    {
+        var work = SystemParameters.WorkArea;
+        double target = Math.Min(Math.Ceiling(ActualHeight + PageScroller.ScrollableHeight), work.Height - 24);
+        if (target <= ActualHeight + 0.5)
+        {
+            return;
+        }
+
+        Height = target;
+        if (Top + Height > work.Bottom)
+        {
+            Top = Math.Max(work.Top, work.Bottom - Height);
         }
     }
 
@@ -779,11 +842,266 @@ public partial class MainWindow : Window
     /// <summary>Normal kapatma: Window_Closing tepsiye kucultme ayarini uygular.</summary>
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
+    // ------------------------------------------------------------------
+    // Tanilama raporu (GitHub issue'ya yapistirmak icin)
+    // ------------------------------------------------------------------
+
+    private string BuildDiagnosticReport()
+    {
+        static string Shown(UIElement e) => e.Visibility == Visibility.Visible ? "var" : "yok";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("### RazerLite tanılama raporu");
+        sb.AppendLine("```");
+        sb.AppendLine($"Sürüm      : {AppTitle}");
+        sb.AppendLine($"Windows    : {Environment.OSVersion.VersionString} ({(Environment.Is64BitOperatingSystem ? "64" : "32")}-bit)");
+        sb.AppendLine($"Zaman      : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+
+        if (_device is null)
+        {
+            sb.AppendLine("Cihaz      : bağlı değil");
+        }
+        else
+        {
+            var known = HidWin.KnownDevices.ContainsKey(_device.Pid) ? "listede" : "listede değil";
+            sb.AppendLine($"Cihaz      : {_device.Info.Title} (PID {_device.Pid:X4}, {_device.Info.ModeText}, {known})");
+            sb.AppendLine($"Yol        : {_device.Path}");
+            sb.AppendLine($"Arayüz     : {HidWin.InterfaceOf(_device.Path)}");
+            sb.AppendLine($"Tx ID      : 0x{_device.TransactionId:X2}");
+            sb.AppendLine($"Firmware   : {_probe?.Firmware ?? "okunamadı"}");
+            sb.AppendLine($"Polling    : {(_device.ExtendedPolling switch { true => "genişletilmiş (0x00/0xC0)", false => "klasik (0x00/0x85)", _ => "bilinmiyor" })}");
+            sb.AppendLine($"Sürücü modu: {(_device.DriverModeApplied ? "uygulandı" : "uygulanmadı")}");
+        }
+
+        sb.AppendLine($"Durum      : {StatusText.Text} | {CurrentText.Text}");
+        sb.AppendLine($"Pil        : {BatteryText.Text} {LinkText.Text}".TrimEnd());
+        sb.AppendLine($"Özellikler : uyku {Shown(SleepPanel)}, düşük güç {Shown(LowPowerPanel)}, yüzey {Shown(SurfacePanel)}, dongle LED {Shown(DongleLedPanel)}");
+
+        sb.AppendLine();
+        sb.AppendLine("Tarama (salt-okuma, firmware 0x00/0x81):");
+        if (_probe is null || _probe.Attempts.Count == 0)
+        {
+            sb.AppendLine("  yapılmadı");
+        }
+        else
+        {
+            foreach (var a in _probe.Attempts)
+            {
+                sb.AppendLine($"  {a.Interface,-6} tx 0x{a.TransactionId:X2} -> {a.Result}");
+            }
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Razer HID yolları (VID 1532):");
+        try
+        {
+            foreach (var path in HidWin.ListRazerPaths())
+            {
+                sb.AppendLine("  " + path);
+            }
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine("  listelenemedi: " + ex.Message);
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Son log satırları:");
+        var lines = DebugBox.Text.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var line in lines.Skip(Math.Max(0, lines.Length - 60)))
+        {
+            sb.AppendLine("  " + line);
+        }
+
+        sb.AppendLine("```");
+        return sb.ToString();
+    }
+
+    private void CopyDiagnostics_Click(object sender, RoutedEventArgs e)
+    {
+        var report = BuildDiagnosticReport();
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            try
+            {
+                Clipboard.SetText(report);
+                StatusText.Text = "Tanılama raporu panoya kopyalandı";
+                Log("DIAGNOSTICS -> panoya kopyalandi");
+                return;
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                Thread.Sleep(80); // pano baska bir uygulamada kilitli olabilir
+            }
+        }
+
+        StatusText.Text = "Pano kullanılamadı; tekrar dene";
+        Log("DIAGNOSTICS ERROR -> pano kilitli");
+    }
+
+    // ------------------------------------------------------------------
+    // Program guncellemesi (GitHub Releases, bkz. Updater)
+    // ------------------------------------------------------------------
+
+    private Updater.Release? _availableUpdate;
+    private bool _updateBusy;
+
+    /// <summary>Acilista: ayar aciksa ve son denetimden 20 saat gectiyse sessizce denetle.</summary>
+    private void MaybeAutoCheckForUpdate()
+    {
+        var last = _settings.LastUpdateCheckUtc;
+        if (_settings.AutoCheckUpdates && (last is null || DateTime.UtcNow - last.Value > TimeSpan.FromHours(20)))
+        {
+            _ = CheckForUpdateAsync(manual: false);
+        }
+    }
+
+    private async Task CheckForUpdateAsync(bool manual)
+    {
+        if (_updateBusy)
+        {
+            return;
+        }
+
+        _updateBusy = true;
+        UpdateCheckButton.IsEnabled = false;
+        if (manual)
+        {
+            UpdateStatusText.Text = "Denetleniyor…";
+        }
+
+        try
+        {
+            var release = await Updater.GetLatestAsync();
+            _settings.LastUpdateCheckUtc = DateTime.UtcNow;
+            _settings.Save();
+
+            if (release is null)
+            {
+                Log("UPDATE -> yayinlanmis surum yok");
+                ShowUpdate(null, "Henüz yayınlanmış bir sürüm yok.");
+                return;
+            }
+
+            Log($"UPDATE -> son surum {release.Tag}, bu surum {AppInfo.VersionText}");
+            if (!Updater.IsNewer(release.Version))
+            {
+                ShowUpdate(null, $"Güncel: {AppInfo.VersionText} (son sürüm {release.Tag})");
+                return;
+            }
+
+            ShowUpdate(release, release.AssetUrl is null
+                ? $"Yeni sürüm {release.Tag} var, ama release'e exe eklenmemiş."
+                : $"Yeni sürüm mevcut: {release.Tag} (bu sürüm {AppInfo.VersionText})");
+            if (!manual)
+            {
+                _tray?.Balloon(AppTitle, $"Yeni sürüm {release.Tag} mevcut. Hakkında sayfasından güncelleyebilirsin.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log("UPDATE ERROR -> " + ex.Message);
+            if (manual)
+            {
+                UpdateStatusText.Text = "Denetlenemedi: " + ex.Message;
+            }
+        }
+        finally
+        {
+            _updateBusy = false;
+            UpdateCheckButton.IsEnabled = true;
+        }
+    }
+
+    private void ShowUpdate(Updater.Release? release, string status)
+    {
+        _availableUpdate = release;
+        UpdateStatusText.Text = status;
+        var shown = release is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateDot.Visibility = shown;
+        UpdateActions.Visibility = shown;
+        UpdateInstallButton.IsEnabled = release?.AssetUrl is not null;
+
+        var notes = release?.Notes.Trim() ?? "";
+        UpdateNotesText.Text = notes.Length > 600 ? notes[..600] + "…" : notes;
+        UpdateNotesText.Visibility = notes.Length > 0 ? shown : Visibility.Collapsed;
+    }
+
+    private async void UpdateCheckButton_Click(object sender, RoutedEventArgs e)
+    {
+        await CheckForUpdateAsync(manual: true);
+    }
+
+    private async void UpdateInstallButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_availableUpdate is not { } release || _updateBusy)
+        {
+            return;
+        }
+
+        var answer = MessageBox.Show(
+            $"RazerLite {release.Tag} indirilip kurulacak ve program yeniden açılacak.\n\nDevam edilsin mi?",
+            AppTitle, MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _updateBusy = true;
+        UpdateInstallButton.IsEnabled = false;
+        UpdateCheckButton.IsEnabled = false;
+        try
+        {
+            var progress = new Progress<int>(p => UpdateInstallText.Text = $"İndiriliyor… %{p}");
+            var path = await Updater.DownloadAsync(release, progress);
+            Log($"UPDATE -> {release.Tag} indirildi ve dogrulandi, yeniden baslatiliyor");
+            UpdateInstallText.Text = "Yeniden başlatılıyor…";
+            Updater.ReplaceAndRestart(path);
+            _exiting = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            Log("UPDATE ERROR -> " + ex.Message);
+            UpdateStatusText.Text = "Güncelleme yapılamadı: " + ex.Message;
+            UpdateInstallText.Text = "İndir ve yeniden başlat";
+            UpdateInstallButton.IsEnabled = true;
+            UpdateCheckButton.IsEnabled = true;
+            _updateBusy = false;
+        }
+    }
+
+    private void UpdatePageButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var url = _availableUpdate?.PageUrl ?? AppInfo.RepoUrl + "/releases";
+            Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log("LINK ERROR -> " + ex.Message);
+        }
+    }
+
+    private void AutoUpdateCheck_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_syncingUi)
+        {
+            return;
+        }
+
+        _settings.AutoCheckUpdates = AutoUpdateCheck.IsChecked == true;
+        _settings.Save();
+        Log($"OTOMATIK GUNCELLEME DENETIMI -> {(_settings.AutoCheckUpdates ? "ACIK" : "KAPALI")}");
+        MaybeAutoCheckForUpdate();
+    }
+
     private void ProjectLinkButton_Click(object sender, RoutedEventArgs e)
     {
         try
         {
-            Process.Start(new ProcessStartInfo("https://github.com/zeugmass/RazerLite") { UseShellExecute = true });
+            Process.Start(new ProcessStartInfo(AppInfo.RepoUrl) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -1408,6 +1726,134 @@ public partial class MainWindow : Window
         finally
         {
             SetBusy(false);
+        }
+    }
+
+    private async Task ReadFirmwareAsync()
+    {
+        var device = _device;
+        if (device is null)
+        {
+            return;
+        }
+
+        int generation = _firmwareGeneration;
+        var mouse = await Protocol.GetExtendedFirmwareAsync(device);
+        if (generation != _firmwareGeneration)
+        {
+            return;
+        }
+
+        var dock = await Protocol.GetDockFirmwareAsync(device);
+        if (generation != _firmwareGeneration)
+        {
+            return;
+        }
+
+        _mouseFirmware = mouse.Version is Protocol.FirmwareVersion mouseVersion ? mouseVersion.Text : null;
+        _dongleFirmware = dock.Version is Protocol.FirmwareVersion dockVersion ? dockVersion.Text : null;
+        Log(_mouseFirmware is null
+            ? $"FIRMWARE -> fare {Protocol.StatusText(mouse.Status)}"
+            : $"FIRMWARE -> fare {_mouseFirmware}");
+        Log(_dongleFirmware is null
+            ? $"FIRMWARE -> dongle {Protocol.StatusText(dock.Status)}"
+            : $"FIRMWARE -> dongle {_dongleFirmware}");
+
+        FirmwareMouseText.Text = _mouseFirmware ?? "—";
+        FirmwareDongleText.Text = _dongleFirmware ?? "—";
+        FirmwareButton.IsEnabled = !_firmwareBusy && (_mouseFirmware is not null || _dongleFirmware is not null);
+    }
+
+    private async void FirmwareButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_firmwareBusy || (_mouseFirmware is null && _dongleFirmware is null))
+        {
+            return;
+        }
+
+        int generation = _firmwareGeneration;
+        var mouse = _mouseFirmware;
+        var dock = _dongleFirmware;
+        int? mouseProduct = MousePackageProduct(_device);
+        _firmwareBusy = true;
+        FirmwareButton.IsEnabled = false;
+        ShowFirmwareStatus("Güncelleme listesi okunuyor…", autoHide: false);
+        try
+        {
+            var lines = new List<string>();
+            if (mouse is not null && mouseProduct is int productId)
+            {
+                lines.Add(await CheckFirmwareAsync("Fare", mouse, productId));
+            }
+
+            if (generation != _firmwareGeneration)
+            {
+                return;
+            }
+
+            if (dock is not null)
+            {
+                lines.Add(await CheckFirmwareAsync("Dongle", dock, 179));
+            }
+
+            if (generation != _firmwareGeneration)
+            {
+                return;
+            }
+
+            ShowFirmwareStatus(lines.Count == 0
+                ? "Bu cihaz için kontrol edilecek yazılım yok."
+                : string.Join(Environment.NewLine, lines), autoHide: true);
+        }
+        finally
+        {
+            _firmwareBusy = false;
+            if (generation == _firmwareGeneration)
+            {
+                FirmwareButton.IsEnabled = _mouseFirmware is not null || _dongleFirmware is not null;
+            }
+        }
+    }
+
+    private static int? MousePackageProduct(HidWin.Device? device) =>
+        device?.Pid is 0x00B3 or 0x00B6 or 0x00B7 or 0x00C2 or 0x00C3 ? 182 : null;
+
+    private async Task<string> CheckFirmwareAsync(string name, string current, int productId)
+    {
+        try
+        {
+            var package = await Protocol.GetMouseFirmwarePackageAsync(productId);
+            if (package is null)
+            {
+                Log($"FIRMWARE {name} -> yayinlanmis paket yok");
+                return $"{name} {current}: yayınlanmış paket yok.";
+            }
+
+            Log($"FIRMWARE {name} -> cihaz {current} / paket {package.Version}");
+            if (!Protocol.FirmwareIsNewer(package.Version, current))
+            {
+                return $"{name} {current} güncel.";
+            }
+
+            var path = await Protocol.DownloadFirmwarePackageAsync(package.Url, Path.Combine(Settings.Directory, "firmware"));
+            Log($"FIRMWARE {name} -> indirildi {Path.GetFileName(path)}");
+            return $"{name} {current} → {package.Version} indirildi. {path}";
+        }
+        catch (Exception ex)
+        {
+            Log($"FIRMWARE {name} -> {ex.Message}");
+            return $"{name} kontrol edilemedi.";
+        }
+    }
+
+    private void ShowFirmwareStatus(string text, bool autoHide = false)
+    {
+        _firmwareStatusTimer.Stop();
+        FirmwareStatusText.Text = text;
+        FirmwareStatusText.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
+        if (autoHide && text.Length > 0)
+        {
+            _firmwareStatusTimer.Start();
         }
     }
 
@@ -2081,6 +2527,7 @@ public partial class MainWindow : Window
             await ReadLowPowerAsync();
             await ReadSurfaceAsync();
             await ReadIndicatorLedAsync();
+            await ReadFirmwareAsync();
             return true;
         }
         catch (Exception ex)
