@@ -211,7 +211,32 @@ public partial class MainWindow : Window
             }
         }
 
-        return null;
+        return ExtractEmbeddedTester();
+    }
+
+    /// <summary>Exe'ye gomulu test aracini %TEMP%\RazerLite'a cikarir; ayni boyutta kopya varsa onu kullanir.</summary>
+    private static string? ExtractEmbeddedTester()
+    {
+        const string name = "PollingRateTesterApp_v1.00.01.exe";
+        using var res = typeof(MainWindow).Assembly.GetManifestResourceStream(name);
+        if (res is null)
+        {
+            return null;
+        }
+
+        var dir = Path.Combine(Path.GetTempPath(), "RazerLite");
+        var path = Path.Combine(dir, name);
+        if (File.Exists(path) && new FileInfo(path).Length == res.Length)
+        {
+            return path;
+        }
+
+        Directory.CreateDirectory(dir);
+        using (var file = File.Create(path))
+        {
+            res.CopyTo(file);
+        }
+        return path;
     }
 
     // ------------------------------------------------------------------
@@ -2397,7 +2422,7 @@ public partial class MainWindow : Window
             if (path is null)
             {
                 MessageBox.Show(
-                    "PollingRateTesterApp_v1.00.01.exe bulunamadi.\nRazerLite.exe ile ayni klasore koy.",
+                    "PollingRateTesterApp_v1.00.01.exe bu surume gomulu degil.\nRazerLite.exe ile ayni klasore koyabilirsin.",
                     AppTitle,
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);

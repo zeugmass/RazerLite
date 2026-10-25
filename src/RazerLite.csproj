@@ -25,10 +25,9 @@
     <Resource Include="razerlite.ico" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\PollingRateTesterApp_v1.00.01.exe" Condition="Exists('..\PollingRateTesterApp_v1.00.01.exe')">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      <Link>PollingRateTesterApp_v1.00.01.exe</Link>
-    </None>
+    <!-- Hz Testi araci exe'nin icine gomulur; tiklaninca %TEMP%\RazerLite'a cikarilip acilir (tek dosya dagitim). -->
+    <EmbeddedResource Include="..\PollingRateTesterApp_v1.00.01.exe" Condition="Exists('..\PollingRateTesterApp_v1.00.01.exe')">
+      <LogicalName>PollingRateTesterApp_v1.00.01.exe</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

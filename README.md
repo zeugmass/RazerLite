@@ -19,7 +19,7 @@ kablo takılıyken kaydetmek kablosuz hızın üzerine yazmaz.
 |---|---|
 | `build.cmd` | Tek EXE'yi derler (`RazerLite.exe`). Sadece .NET SDK 10 gerekir. |
 | `src\` | Kaynak kod (C# / WPF). |
-| `PollingRateTesterApp_v1.00.01.exe` | "Hz Testi" butonunun açtığı Razer test aracı. `RazerLite.exe` ile aynı klasörde durmalı. |
+| `PollingRateTesterApp_v1.00.01.exe` | "Hz Testi" butonunun açtığı Razer test aracı. Derlemede `RazerLite.exe`'nin içine gömülür; ayrıca kopyalamaya gerek yok. |
 
 ## Derleme
 
