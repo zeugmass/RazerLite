@@ -13,20 +13,20 @@ where dotnet >nul 2>nul
 if errorlevel 1 (
   echo  [HATA] .NET SDK bulunamadi.
   echo.
-  echo  Kurmak icin PowerShell'de:   winget install Microsoft.DotNet.SDK.8
-  echo  veya: https://dotnet.microsoft.com/download/dotnet/8.0  ^(SDK, x64^)
+  echo  Kurmak icin PowerShell'de:   winget install Microsoft.DotNet.SDK.10
+  echo  veya: https://dotnet.microsoft.com/download/dotnet/10.0  ^(SDK, x64^)
   echo.
   pause
   exit /b 1
 )
 
 set "SDKOK="
-for /f "tokens=1 delims=." %%v in ('dotnet --version 2^>nul') do if %%v GEQ 8 set SDKOK=1
+for /f "tokens=1 delims=." %%v in ('dotnet --version 2^>nul') do if %%v GEQ 10 set SDKOK=1
 if not defined SDKOK (
-  echo  [HATA] .NET SDK 8 veya ustu gerekiyor. Yuklu surum:
+  echo  [HATA] .NET SDK 10 veya ustu gerekiyor. Yuklu surum:
   dotnet --version
   echo.
-  echo  Kurmak icin:   winget install Microsoft.DotNet.SDK.8
+  echo  Kurmak icin:   winget install Microsoft.DotNet.SDK.10
   echo.
   pause
   exit /b 1
