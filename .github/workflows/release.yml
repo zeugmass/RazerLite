@@ -20,7 +20,8 @@ jobs:
 
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: "10.0.x"
+          # Tam surum: "10.0.x" kanal indirmesi aka.ms -> dotnetorigin (409) uzerinden bozuk.
+          dotnet-version: "10.0.402"
 
       - name: Publish (surum etiketten)
         shell: pwsh
