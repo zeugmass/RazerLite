@@ -1168,9 +1168,9 @@
                                            FontSize="12" Foreground="{StaticResource Text2Brush}" TextWrapping="Wrap" LineHeight="18"/>
                                 <Button x:Name="FirmwareButton" Style="{StaticResource DeepButton}" Height="40" Padding="14,0" Margin="0,12,0,0"
                                         HorizontalAlignment="Stretch" IsEnabled="False"
-                                        ToolTip="Synapse’in yayınladığı fare paketiyle karşılaştırır. Yeni sürüm varsa zip indirilir; cihaza yazılmaz."
+                                        ToolTip="Razer destek sayfasındaki kurulum dosyasına bakar. Güncelleme varsa kayıt yerini sen seçersin; program dosyayı çalıştırmaz."
                                         Click="FirmwareButton_Click">
-                                    <TextBlock Text="Firmware güncellemesini kontrol et" FontSize="13"/>
+                                    <TextBlock x:Name="FirmwareButtonText" Text="Firmware güncellemesini kontrol et" FontSize="13"/>
                                 </Button>
                                 <Button x:Name="DiagnosticsAboutButton" Style="{StaticResource DeepButton}" Height="40" Padding="14,0" Margin="0,16,0,0"
                                         HorizontalAlignment="Stretch"

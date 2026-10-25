@@ -342,6 +342,7 @@ public partial class MainWindow : Window
         FirmwareMouseText.Text = "—";
         FirmwareDongleText.Text = "—";
         ShowFirmwareStatus("");
+        ResetFirmwareAction();
         FirmwareButton.IsEnabled = false;
         _lastBattery = null;
         _lowBatteryWarnedAt = null;
@@ -765,6 +766,17 @@ public partial class MainWindow : Window
     private bool _firmwareBusy;
     private int _firmwareGeneration;
     private readonly DispatcherTimer _firmwareStatusTimer;
+    private FirmwareNext _firmwareNext = FirmwareNext.Check;
+    private string? _firmwareFileUrl;
+    private string? _firmwarePageUrl;
+    private string? _firmwareFileName;
+
+    private enum FirmwareNext
+    {
+        Check,
+        Download,
+        OpenPage,
+    }
     private int _surfaceMm = 2;
     private bool _surfaceAsymmetric;
     private int _surfaceLift = 13;
@@ -1791,7 +1803,24 @@ public partial class MainWindow : Window
 
     private async void FirmwareButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_firmwareBusy || (_mouseFirmware is null && _dongleFirmware is null))
+        if (_firmwareBusy)
+        {
+            return;
+        }
+
+        if (_firmwareNext == FirmwareNext.Download)
+        {
+            await DownloadFirmwareAsync();
+            return;
+        }
+
+        if (_firmwareNext == FirmwareNext.OpenPage)
+        {
+            OpenFirmwarePage();
+            return;
+        }
+
+        if (_mouseFirmware is null && _dongleFirmware is null)
         {
             return;
         }
@@ -1799,36 +1828,28 @@ public partial class MainWindow : Window
         int generation = _firmwareGeneration;
         var mouse = _mouseFirmware;
         var dock = _dongleFirmware;
-        int? mouseProduct = MousePackageProduct(_device);
+        var device = _device;
         _firmwareBusy = true;
         FirmwareButton.IsEnabled = false;
         ShowFirmwareStatus("Güncelleme listesi okunuyor…", autoHide: false);
         try
         {
-            var lines = new List<string>();
-            if (mouse is not null && mouseProduct is int productId)
-            {
-                lines.Add(await CheckFirmwareAsync("Fare", mouse, productId));
-            }
-
+            var offer = await FindFirmwareOfferAsync(device, mouse, dock);
             if (generation != _firmwareGeneration)
             {
                 return;
             }
 
-            if (dock is not null)
+            ApplyFirmwareOffer(mouse, dock, offer);
+        }
+        catch (Exception ex)
+        {
+            Log("FIRMWARE -> " + ex.Message);
+            if (generation == _firmwareGeneration)
             {
-                lines.Add(await CheckFirmwareAsync("Dongle", dock, 179));
+                ResetFirmwareAction();
+                ShowFirmwareStatus("Güncelleme listesi okunamadı.", autoHide: true);
             }
-
-            if (generation != _firmwareGeneration)
-            {
-                return;
-            }
-
-            ShowFirmwareStatus(lines.Count == 0
-                ? "Bu cihaz için kontrol edilecek yazılım yok."
-                : string.Join(Environment.NewLine, lines), autoHide: true);
         }
         finally
         {
@@ -1840,35 +1861,210 @@ public partial class MainWindow : Window
         }
     }
 
-    private static int? MousePackageProduct(HidWin.Device? device) =>
-        device?.Pid is 0x00B3 or 0x00B6 or 0x00B7 or 0x00C2 or 0x00C3 ? 182 : null;
-
-    private async Task<string> CheckFirmwareAsync(string name, string current, int productId)
+    private static async Task<Protocol.FirmwareOffer?> FindFirmwareOfferAsync(
+        HidWin.Device? device, string? mouse, string? dock)
     {
+        if (device is null)
+        {
+            return null;
+        }
+
+        if (Protocol.FirmwareProductForPid(device.Pid) is int direct)
+        {
+            return await Protocol.GetOfficialFirmwareAsync(direct);
+        }
+
+        if (device.Pid != 0x00B3)
+        {
+            return null;
+        }
+
+        foreach (int product in Protocol.DongleMouseProducts)
+        {
+            var offer = await Protocol.GetOfficialFirmwareAsync(product);
+            if (offer is null)
+            {
+                continue;
+            }
+
+            if (mouse is not null && Protocol.SameFirmwareLine(offer.Version, mouse))
+            {
+                return offer;
+            }
+
+            if (mouse is null && dock is not null && Protocol.SameFirmwareLine(offer.Version, dock))
+            {
+                return offer;
+            }
+        }
+
+        return null;
+    }
+
+    private void ApplyFirmwareOffer(string? mouse, string? dock, Protocol.FirmwareOffer? offer)
+    {
+        ResetFirmwareAction();
+        string? current = mouse;
+        if (current is null && dock is not null && offer is not null
+            && Protocol.SameFirmwareLine(offer.Version, dock))
+        {
+            current = dock;
+        }
+
+        if (offer is null || current is null)
+        {
+            Log("FIRMWARE -> yayinlanmis kurulum yok");
+            ShowFirmwareStatus("Bu cihaz için sitede kurulum dosyası yok.", autoHide: true);
+            return;
+        }
+
+        Log($"FIRMWARE -> cihaz {current} / kurulum {offer.Version} sayfa={(offer.SupportPageRead ? "okundu" : "yok")}");
+        bool newer = Protocol.FirmwareIsNewer(offer.Version, current);
+        if (!offer.SupportPageRead && !newer)
+        {
+            _firmwareNext = FirmwareNext.OpenPage;
+            _firmwarePageUrl = offer.PageUrl;
+            FirmwareButtonText.Text = "Destek sayfasını aç";
+            ShowFirmwareStatus(
+                $"Cihaz {current}. Synapse listesi {offer.Version}. Destek sayfası okunamadı; sitede daha yeni dosya olabilir.",
+                autoHide: false);
+            return;
+        }
+
+        if (!newer)
+        {
+            ShowFirmwareStatus($"Cihaz {current}. Sitedeki kurulum {offer.Version}, güncel.", autoHide: true);
+            return;
+        }
+
+        if (offer.FileUrl is null)
+        {
+            _firmwareNext = FirmwareNext.OpenPage;
+            _firmwarePageUrl = offer.PageUrl;
+            FirmwareButtonText.Text = "Destek sayfasını aç";
+            ShowFirmwareStatus($"Cihaz {current}. Sitedeki kurulum {offer.Version}. Dosya adresi sayfada.", autoHide: false);
+            return;
+        }
+
+        _firmwareNext = FirmwareNext.Download;
+        _firmwareFileUrl = offer.FileUrl;
+        _firmwareFileName = FirmwareFileName(offer.FileUrl);
+        FirmwareButtonText.Text = "İndirilecek yeri seç";
+        ShowFirmwareStatus(
+            $"Cihaz {current}. Sitedeki kurulum {offer.Version}. İndirmeden önce kayıt yerini seçeceksin.",
+            autoHide: false);
+    }
+
+    private async Task DownloadFirmwareAsync()
+    {
+        if (_firmwareFileUrl is null || _firmwareFileName is null)
+        {
+            return;
+        }
+
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "Firmware kurulumunu kaydet",
+            FileName = _firmwareFileName,
+            Filter = "Kurulum dosyası|*.exe;*.zip",
+            InitialDirectory = FirmwareSaveDirectory(),
+            OverwritePrompt = true,
+        };
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        string? folder = Path.GetDirectoryName(dialog.FileName);
+        if (!string.IsNullOrEmpty(folder))
+        {
+            _settings.FirmwareDirectory = folder;
+            _settings.Save();
+        }
+
+        int generation = _firmwareGeneration;
+        string url = _firmwareFileUrl;
+        _firmwareBusy = true;
+        FirmwareButton.IsEnabled = false;
+        ShowFirmwareStatus("İndiriliyor…", autoHide: false);
         try
         {
-            var package = await Protocol.GetMouseFirmwarePackageAsync(productId);
-            if (package is null)
+            await Protocol.DownloadFirmwarePackageAsync(url, dialog.FileName);
+            Log("FIRMWARE -> kaydedildi " + Path.GetFileName(dialog.FileName));
+            if (generation != _firmwareGeneration)
             {
-                Log($"FIRMWARE {name} -> yayinlanmis paket yok");
-                return $"{name} {current}: yayınlanmış paket yok.";
+                return;
             }
 
-            Log($"FIRMWARE {name} -> cihaz {current} / paket {package.Version}");
-            if (!Protocol.FirmwareIsNewer(package.Version, current))
-            {
-                return $"{name} {current} güncel.";
-            }
-
-            var path = await Protocol.DownloadFirmwarePackageAsync(package.Url, Path.Combine(Settings.Directory, "firmware"));
-            Log($"FIRMWARE {name} -> indirildi {Path.GetFileName(path)}");
-            return $"{name} {current} → {package.Version} indirildi. {path}";
+            ResetFirmwareAction();
+            ShowFirmwareStatus("Kurulum kaydedildi. Dosya çalıştırılmadı: " + dialog.FileName, autoHide: true);
         }
         catch (Exception ex)
         {
-            Log($"FIRMWARE {name} -> {ex.Message}");
-            return $"{name} kontrol edilemedi.";
+            Log("FIRMWARE -> " + ex.Message);
+            if (generation == _firmwareGeneration)
+            {
+                ShowFirmwareStatus("Kurulum indirilemedi.", autoHide: true);
+            }
         }
+        finally
+        {
+            _firmwareBusy = false;
+            if (generation == _firmwareGeneration)
+            {
+                FirmwareButton.IsEnabled = _mouseFirmware is not null || _dongleFirmware is not null;
+            }
+        }
+    }
+
+    private void OpenFirmwarePage()
+    {
+        if (_firmwarePageUrl is not null
+            && Uri.TryCreate(_firmwarePageUrl, UriKind.Absolute, out var uri)
+            && uri.Scheme == Uri.UriSchemeHttps
+            && (uri.Host.Equals("mysupport.razer.com", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("rzr.to", StringComparison.OrdinalIgnoreCase)))
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+    }
+
+    private void ResetFirmwareAction()
+    {
+        _firmwareNext = FirmwareNext.Check;
+        _firmwareFileUrl = null;
+        _firmwarePageUrl = null;
+        _firmwareFileName = null;
+        FirmwareButtonText.Text = "Firmware güncellemesini kontrol et";
+    }
+
+    private string FirmwareSaveDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(_settings.FirmwareDirectory)
+            && System.IO.Directory.Exists(_settings.FirmwareDirectory))
+        {
+            return _settings.FirmwareDirectory;
+        }
+
+        string downloads = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+        return System.IO.Directory.Exists(downloads)
+            ? downloads
+            : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    }
+
+    private static string FirmwareFileName(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            string name = Path.GetFileName(uri.LocalPath);
+            if (!string.IsNullOrEmpty(name) && name.IndexOfAny(Path.GetInvalidFileNameChars()) < 0)
+            {
+                return name;
+            }
+        }
+
+        return "FirmwareUpdater.exe";
     }
 
     private void ShowFirmwareStatus(string text, bool autoHide = false)

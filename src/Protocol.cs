@@ -535,8 +535,9 @@ internal static class Protocol
     // Yazilim surumu. Synapse getExtendedFirmwareVersion: [boyut 4, sinif 0x00, komut 0x87].
     // Dock (dongle) surumu getDockExtendedFirmwareVersion: [4, 0x00, 0x93].
     // Yanit: major.minor.internal.reserved.
-    // Indirilecek paket, urun arayuzundeki latestVersionInfo icinden deviceType "mouse" kaydidir.
-    // Klavye paketi ayni listede durur ve secilmez. Zip yalnizca indirilir, cihaza yazilmaz.
+    // Indirilecek dosya, urun manifestindeki latestFirmwareInfo adresidir. Bu adres destek
+    // sayfasina gidiyorsa sayfadaki kurulum (exe) esas alinir. Synapse'in dahili hex zip'i
+    // kurulabilir dosya degildir ve secilmez. Dosya yalnizca indirilir, calistirilmaz.
     public readonly record struct FirmwareVersion(int Major, int Minor, int Internal, int Reserved)
     {
         public string Text => $"{Major}.{Minor}.{Internal}.{Reserved}";
@@ -545,7 +546,22 @@ internal static class Protocol
             new(reply[8], reply[9], reply[10], reply[11]);
     }
 
-    public sealed record FirmwareRelease(string Version, string Url);
+    /// <summary>
+    /// Destek sayfasindaki kurulum. FileUrl doluysa dosya indirilebilir.
+    /// SupportPageRead false ise destek sayfasi acilmamistir; surum yalnizca manifestten gelir.
+    /// </summary>
+    public sealed record FirmwareOffer(string Version, string? FileUrl, string? PageUrl, bool SupportPageRead);
+
+    /// <summary>Kablo veya kablosuz fare PID'inden Synapse urun numarasi. Dongle 0x00B3 burada yok.</summary>
+    public static int? FirmwareProductForPid(int pid) => pid switch
+    {
+        0x00B6 or 0x00B7 or 0x00C2 or 0x00C3 => 182,
+        0x00BE or 0x00BF => 190,
+        _ => null,
+    };
+
+    /// <summary>HyperPolling dongle arkasinda bakilacak fare urunleri. Ilk eslesen major surum kullanilir.</summary>
+    public static readonly int[] DongleMouseProducts = [190, 182];
 
     public static async Task<(FirmwareVersion? Version, byte Status)> GetExtendedFirmwareAsync(HidWin.Device device)
     {
@@ -591,152 +607,249 @@ internal static class Protocol
         return false;
     }
 
-    private static readonly HttpClient FirmwareClient = new()
+    public static bool SameFirmwareLine(string left, string right)
     {
-        Timeout = TimeSpan.FromSeconds(45),
-    };
+        static int Major(string value) =>
+            value.Split('.').Length > 0 && int.TryParse(value.Split('.')[0], out var major) ? major : -1;
 
-    private static readonly Dictionary<string, string> FirmwareScriptCache = new();
-    private static readonly object FirmwareCacheGate = new();
-
-    /// <summary>
-    /// Synapse urun sayfasindaki derlenmis arayuzden, deviceType "mouse" paketini okur.
-    /// Fare govdesi urun 182, dongle paketi urun 179. Kayitta paket yoksa null.
-    /// </summary>
-    public static async Task<FirmwareRelease?> GetMouseFirmwarePackageAsync(int productId)
-    {
-        var pageUrl = $"https://apps.razer.com/synapse/products/{productId}/ui/index.html";
-        using var page = await FirmwareClient.GetAsync(pageUrl);
-        if (!page.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        var html = await page.Content.ReadAsStringAsync();
-        var script = Regex.Match(html, @"src=""./static/js/(main\.[0-9a-f]+\.js)""");
-        if (!script.Success)
-        {
-            return null;
-        }
-
-        var scriptUrl = $"https://apps.razer.com/synapse/products/{productId}/ui/static/js/{script.Groups[1].Value}";
-        string? js;
-        lock (FirmwareCacheGate)
-        {
-            FirmwareScriptCache.TryGetValue(scriptUrl, out js);
-        }
-
-        if (js is null)
-        {
-            js = await FirmwareClient.GetStringAsync(scriptUrl);
-            lock (FirmwareCacheGate)
-            {
-                FirmwareScriptCache[scriptUrl] = js;
-            }
-        }
-
-        return ExtractMousePackage(js);
+        int major = Major(left);
+        return major >= 0 && major == Major(right);
     }
 
-    /// <summary>
-    /// En yakin latestVersion kaydindan fare paketini alir. Klavye kaydi ayni pencerede kalsa da
-    /// mouse deviceType'tan onceki ilk latestVersion kullanilir.
-    /// </summary>
-    private static FirmwareRelease? ExtractMousePackage(string js)
+    private static readonly HttpClient FirmwareClient = CreateFirmwareClient();
+
+    private static HttpClient CreateFirmwareClient()
     {
-        int from = 0;
-        while (from < js.Length)
+        var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
         {
-            int typeAt = js.IndexOf("deviceType:\"mouse\"", from, StringComparison.Ordinal);
-            if (typeAt < 0)
+            Timeout = TimeSpan.FromSeconds(45),
+        };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+        client.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/json");
+        return client;
+    }
+
+    private const int FirmwareBytesLimit = 64 * 1024 * 1024;
+
+    /// <summary>
+    /// Urun manifestindeki latestFirmwareInfo kaydini ve, adres destek sayfasina cikiyorsa,
+    /// sayfadaki guncel kurulum dosyasini okur. Kayit yoksa null.
+    /// </summary>
+    public static async Task<FirmwareOffer?> GetOfficialFirmwareAsync(int productId)
+    {
+        var manifestUrl = $"https://apps.razer.com/synapse/products/{productId}/mw/manifest.json";
+        using var manifestResponse = await FirmwareClient.GetAsync(manifestUrl);
+        if (!manifestResponse.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var manifest = await System.Text.Json.JsonSerializer.DeserializeAsync<FirmwareManifest>(
+            await manifestResponse.Content.ReadAsStreamAsync());
+        var info = manifest?.LatestFirmwareInfo;
+        var listed = FirstVersion(info?.VersionDevice, info?.Version);
+        if (listed is null || info?.Url is not { Length: > 0 } url)
+        {
+            return null;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var start) || start.Scheme != Uri.UriSchemeHttps)
+        {
+            return null;
+        }
+
+        var resolved = await ResolveFirmwareLinkAsync(start);
+        return new FirmwareOffer(
+            resolved.Version ?? listed,
+            resolved.FileUrl,
+            resolved.PageUrl ?? (resolved.FileUrl is null ? url : null),
+            resolved.PageRead);
+    }
+
+    private readonly record struct ResolvedLink(string? Version, string? FileUrl, string? PageUrl, bool PageRead);
+
+    private static async Task<ResolvedLink> ResolveFirmwareLinkAsync(Uri start)
+    {
+        var current = start;
+        for (int hop = 0; hop < 6; hop++)
+        {
+            if (current.Scheme != Uri.UriSchemeHttps)
+            {
+                return default;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            using var response = await FirmwareClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (IsRedirect(response.StatusCode) && response.Headers.Location is Uri location)
+            {
+                current = location.IsAbsoluteUri ? location : new Uri(current, location);
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return default;
+            }
+
+            if (IsFirmwareFile(current))
+            {
+                return new ResolvedLink(null, current.AbsoluteUri, null, false);
+            }
+
+            if (!current.Host.Equals("mysupport.razer.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return new ResolvedLink(null, null, current.AbsoluteUri, false);
+            }
+
+            var body = await ReadLimitedAsync(response.Content, 1_000_000);
+            if (!TryParseSupportUpdater(body, out var version, out var link)
+                || !Uri.TryCreate(link, UriKind.Absolute, out var fileStart))
+            {
+                return new ResolvedLink(null, null, current.AbsoluteUri, false);
+            }
+
+            var file = await ResolveFileAsync(fileStart);
+            return new ResolvedLink(version, file, current.AbsoluteUri, true);
+        }
+
+        return default;
+    }
+
+    private static async Task<string?> ResolveFileAsync(Uri start)
+    {
+        var current = start;
+        for (int hop = 0; hop < 6; hop++)
+        {
+            if (current.Scheme != Uri.UriSchemeHttps)
             {
                 return null;
             }
 
-            int objAt = js.LastIndexOf("{latestVersion:\"", typeAt, StringComparison.Ordinal);
-            if (objAt >= 0 && typeAt - objAt <= 600)
+            if (IsFirmwareFile(current))
             {
-                var window = js.Substring(objAt, typeAt - objAt);
-                var version = Regex.Match(window, @"^\{latestVersion:""(\d+\.\d+\.\d+\.\d+)""");
-                var url = Regex.Match(
-                    window,
-                    @"releaseUrl:""(https://app-assets\.razer\.com/files/synapse/devices/\d+/FWUpdate/[^""]+\.zip)""");
-                if (version.Success && url.Success)
-                {
-                    return new FirmwareRelease(version.Groups[1].Value, url.Groups[1].Value);
-                }
+                return current.AbsoluteUri;
             }
 
-            from = typeAt + 16;
+            using var request = new HttpRequestMessage(HttpMethod.Get, current);
+            using var response = await FirmwareClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            if (IsRedirect(response.StatusCode) && response.Headers.Location is Uri location)
+            {
+                current = location.IsAbsoluteUri ? location : new Uri(current, location);
+                continue;
+            }
+
+            return IsFirmwareFile(current) ? current.AbsoluteUri : null;
         }
 
         return null;
     }
 
-    /// <summary>
-    /// Paketi app-assets.razer.com adresinden indirir, SHA256 basligini dogrular ve kaydeder.
-    /// </summary>
-    public static async Task<string> DownloadFirmwarePackageAsync(string url, string directory)
+    /// <summary>Destek sayfasi metninden kurulum surumunu ve indirme adresini ayiklar.</summary>
+    internal static bool TryParseSupportUpdater(string body, out string version, out string link)
     {
-        if (!IsFirmwarePackageUrl(url, out var uri))
+        version = "";
+        link = "";
+        if (string.IsNullOrEmpty(body))
+        {
+            return false;
+        }
+
+        var text = body.Replace("&amp;", "&", StringComparison.Ordinal);
+        var found = Regex.Match(text, @"Firmware updater v(\d+\.\d+\.\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+        if (!found.Success)
+        {
+            return false;
+        }
+
+        int length = Math.Min(800, text.Length - found.Index);
+        var window = text.Substring(found.Index, length);
+        var address = Regex.Match(
+            window,
+            @"https://(?:rzr\.to/[A-Za-z0-9]+|dl\.razerzone\.com/[^\s""'<>]+?\.exe)",
+            RegexOptions.IgnoreCase);
+        if (!address.Success)
+        {
+            return false;
+        }
+
+        version = found.Groups[1].Value;
+        link = address.Value;
+        return true;
+    }
+
+    /// <summary>Kurulumu secilen dosya yoluna indirir. Adres yalnizca Razer dosya sunucusuna gidebilir.</summary>
+    public static async Task DownloadFirmwarePackageAsync(string url, string destination)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var start))
         {
             throw new InvalidOperationException("Paket adresi beklenen Razer adresi değil.");
         }
 
-        var name = Path.GetFileName(uri.LocalPath);
-        if (string.IsNullOrEmpty(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        var fileUrl = await ResolveFileAsync(start);
+        if (fileUrl is null || !Uri.TryCreate(fileUrl, UriKind.Absolute, out var file))
         {
-            throw new InvalidOperationException("Paket adı geçersiz.");
+            throw new InvalidOperationException("Paket adresi beklenen Razer adresi değil.");
         }
 
-        Directory.CreateDirectory(directory);
-        var destination = Path.Combine(directory, name);
+        var folder = Path.GetDirectoryName(destination);
+        if (string.IsNullOrEmpty(folder))
+        {
+            throw new InvalidOperationException("Kayıt yeri geçersiz.");
+        }
+
+        Directory.CreateDirectory(folder);
         var partial = destination + ".part";
-        using var response = await FirmwareClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead);
+        using var response = await FirmwareClient.GetAsync(file, HttpCompletionOption.ResponseHeadersRead);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException("Paket indirilemedi.");
         }
 
-        var finalHost = response.RequestMessage?.RequestUri?.Host;
-        if (finalHost is null || !finalHost.Equals("app-assets.razer.com", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException("Paket başka bir adrese yönlendi.");
-        }
-
         var length = response.Content.Headers.ContentLength;
-        if (length is null or <= 0 or > 64 * 1024 * 1024)
+        if (length is < 1 or > FirmwareBytesLimit)
         {
             throw new InvalidOperationException("Paket boyutu beklenmiyor.");
         }
 
-        if (!response.Headers.TryGetValues("x-amz-meta-sha256", out var hashes))
-        {
-            throw new InvalidOperationException("Paket doğrulama bilgisi yok.");
-        }
-
-        var expected = hashes.FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(expected))
-        {
-            throw new InvalidOperationException("Paket doğrulama bilgisi yok.");
-        }
+        string? expected = response.Headers.TryGetValues("x-amz-meta-sha256", out var hashes)
+            ? hashes.FirstOrDefault()
+            : null;
 
         try
         {
             await using (var input = await response.Content.ReadAsStreamAsync())
             await using (var output = File.Create(partial))
             {
-                await input.CopyToAsync(output);
+                var buffer = new byte[81920];
+                long written = 0;
+                while (true)
+                {
+                    int read = await input.ReadAsync(buffer);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    written += read;
+                    if (written > FirmwareBytesLimit)
+                    {
+                        throw new InvalidOperationException("Paket boyutu beklenmiyor.");
+                    }
+
+                    await output.WriteAsync(buffer.AsMemory(0, read));
+                }
+
+                if (length is long expectedLength && written != expectedLength)
+                {
+                    throw new InvalidOperationException("İndirme yarım kaldı.");
+                }
             }
 
-            if (new FileInfo(partial).Length != length)
+            if (!string.IsNullOrWhiteSpace(expected))
             {
-                throw new InvalidOperationException("İndirme yarım kaldı.");
-            }
-
-            await using (var file = File.OpenRead(partial))
-            {
-                var hash = await SHA256.HashDataAsync(file);
+                await using var saved = File.OpenRead(partial);
+                var hash = await SHA256.HashDataAsync(saved);
                 if (!Convert.ToHexString(hash).Equals(expected, StringComparison.OrdinalIgnoreCase))
                 {
                     throw new InvalidOperationException("Paket doğrulaması tutmadı.");
@@ -744,7 +857,6 @@ internal static class Protocol
             }
 
             File.Move(partial, destination, overwrite: true);
-            return destination;
         }
         catch
         {
@@ -757,19 +869,64 @@ internal static class Protocol
         }
     }
 
-    private static bool IsFirmwarePackageUrl(string url, out Uri uri)
+    private static bool IsRedirect(System.Net.HttpStatusCode status) => (int)status is >= 300 and < 400;
+
+    private static bool IsFirmwareFile(Uri uri) =>
+        uri.Scheme == Uri.UriSchemeHttps
+        && (uri.Host.Equals("dl.razerzone.com", StringComparison.OrdinalIgnoreCase)
+            || uri.Host.Equals("app-assets.razer.com", StringComparison.OrdinalIgnoreCase))
+        && (uri.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            || uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+
+    private static async Task<string> ReadLimitedAsync(HttpContent content, int maxChars)
     {
-        if (Uri.TryCreate(url, UriKind.Absolute, out uri!)
-            && uri.Scheme == Uri.UriSchemeHttps
-            && uri.Host.Equals("app-assets.razer.com", StringComparison.OrdinalIgnoreCase)
-            && uri.AbsolutePath.Contains("/files/synapse/devices/", StringComparison.Ordinal)
-            && uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        await using var stream = await content.ReadAsStreamAsync();
+        using var reader = new StreamReader(stream);
+        var buffer = new char[4096];
+        var text = new System.Text.StringBuilder();
+        while (text.Length < maxChars)
         {
-            return true;
+            int read = await reader.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maxChars - text.Length)));
+            if (read == 0)
+            {
+                break;
+            }
+
+            text.Append(buffer, 0, read);
         }
 
-        uri = null!;
-        return false;
+        return text.ToString();
+    }
+
+    private static string? FirstVersion(string? device, string? listed)
+    {
+        foreach (var candidate in new[] { device, listed })
+        {
+            if (candidate is { Length: > 0 } && candidate.Contains('.', StringComparison.Ordinal))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private sealed class FirmwareManifest
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("latestFirmwareInfo")]
+        public FirmwareManifestInfo? LatestFirmwareInfo { get; set; }
+    }
+
+    private sealed class FirmwareManifestInfo
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("version")]
+        public string? Version { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("versionDevice")]
+        public string? VersionDevice { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("url")]
+        public string? Url { get; set; }
     }
 
     // Bos birakma uykusu. Synapse getTimeToSleep / setTimeToSleep:

@@ -45,6 +45,9 @@ public sealed class Settings
     /// <summary>Son program guncellemesi denetimi (UTC); gunluk sinir icin.</summary>
     public DateTime? LastUpdateCheckUtc { get; set; }
 
+    /// <summary>Firmware kurulumunun son kaydedildigi klasor. Bos ise Indirilenler acilir.</summary>
+    public string? FirmwareDirectory { get; set; }
+
     [JsonIgnore]
     public static string Directory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RazerLite");
