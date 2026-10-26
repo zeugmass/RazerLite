@@ -2319,7 +2319,7 @@ public partial class MainWindow : Window
         Protocol.LedOff => "Sürekli kapalı. Bu ışık hiç yanmaz.",
         Protocol.LedBatteryLevel => "Pil seviyesi. Azaldıkça değişir: %100, %75, %50, %25.",
         Protocol.LedConnectionQuality => "Bağlantı kalitesi. Sinyalin gücü: mükemmel, iyi, fena değil, zayıf.",
-        Protocol.LedPollingRate => "Yoklama hızı. 125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı.",
+        Protocol.LedPollingRate => "Polling Rate. 125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı.",
         Protocol.LedDpiStage => "DPI kademesi. Alttaki tuşun kademesi: 1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı.",
         _ => "",
     };
@@ -2360,7 +2360,6 @@ public partial class MainWindow : Window
         }
 
         ShowDongleLed(mode);
-        ShowDongleLeds(new byte[] { Protocol.LedConnectionQuality, Protocol.LedBatteryLevel, Protocol.LedPollingRate });
     }
 
     private void ShowDongleLed(byte mode)
@@ -2429,7 +2428,7 @@ public partial class MainWindow : Window
             (Protocol.LedOff, "Sürekli kapalı"),
             (Protocol.LedBatteryLevel, "Pil seviyesi"),
             (Protocol.LedConnectionQuality, "Bağlantı kalitesi"),
-            (Protocol.LedPollingRate, "Yoklama hızı"),
+            (Protocol.LedPollingRate, "Polling Rate"),
             (Protocol.LedDpiStage, "DPI kademesi"),
         ];
         foreach (var box in new[] { Led1Box, Led2Box, Led3Box })
