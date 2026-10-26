@@ -48,6 +48,12 @@ public sealed class Settings
     /// <summary>Firmware kurulumunun son kaydedildigi klasor. Bos ise Indirilenler acilir.</summary>
     public string? FirmwareDirectory { get; set; }
 
+    /// <summary>
+    /// Son okunan dongle LED ayari: tek deger tek LED'li HyperPolling dongle, uc deger yarim kure dongle.
+    /// Fare kabloyla sarj olurken dongle'a ulasilamaz; kart bu ayarla, isiklar sonuk gosterilir.
+    /// </summary>
+    public List<int>? LastDongleLeds { get; set; }
+
     [JsonIgnore]
     public static string Directory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "RazerLite");

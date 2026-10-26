@@ -79,7 +79,7 @@ public partial class MainWindow : Window
         SyncSettingsUi();
         RefreshProfileUi();
 
-        // Sag sutun: gorunen son cihaz karti kalan yuksekligi doldursun (kablolu modda LED karti gizlenir).
+        // Sag sutun: gorunen son cihaz karti sol sutunun boyuna kadar uzasin.
         var visibility = DependencyPropertyDescriptor.FromProperty(VisibilityProperty, typeof(UIElement));
         foreach (var card in DeviceCards)
         {
@@ -87,6 +87,21 @@ public partial class MainWindow : Window
         }
 
         UpdateDeviceCardFill();
+        SizeChanged += (_, _) => UpdateUiScale();
+    }
+
+    // Tasarim olcusu: bu boyuttan buyuk pencerede (tam ekran) arayuz orantili buyur.
+    private const double DesignWidth = 1200, DesignHeight = 930;
+
+    private void UpdateUiScale()
+    {
+        double s = Math.Max(1, Math.Min(ActualWidth / DesignWidth, ActualHeight / DesignHeight));
+        if (RootGrid.LayoutTransform is ScaleTransform current && Math.Abs(current.ScaleX - s) < 0.001)
+        {
+            return;
+        }
+
+        RootGrid.LayoutTransform = s > 1.001 ? new ScaleTransform(s, s) : Transform.Identity;
     }
 
     private void Log(string text)
@@ -827,10 +842,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private FrameworkElement[] DeviceCards => [SleepPanel, LowPowerPanel, SurfacePanel, DongleLedPanel];
+    private FrameworkElement[] DeviceCards => [LowPowerPanel, SurfacePanel, DongleLedPanel];
 
     /// <summary>
-    /// Sag sutundaki kartlardan gorunen son kart kalan yuksekligi doldurur; boylece hangi kartlar
+    /// Sag sutundaki kartlardan gorunen son kart sol sutunun boyuna kadar uzar; boylece hangi kartlar
     /// gizli olursa olsun iki sutunun alt kenari ayni cizgide biter.
     /// </summary>
     private void UpdateDeviceCardFill()
@@ -1366,6 +1381,7 @@ public partial class MainWindow : Window
                 Log($"BATTERY -> %{pct}{(b.Charging ? " (sarj)" : "")}");
                 UpdateTrayToolTip();
                 MaybeWarnLowBattery(pct, b.Charging);
+                UpdateDongleArt();
                 return true;
             }
 
@@ -1398,6 +1414,7 @@ public partial class MainWindow : Window
         }
 
         UpdateTrayToolTip();
+        UpdateDongleArt();
         return false;
     }
 
@@ -2282,14 +2299,13 @@ public partial class MainWindow : Window
         _ => "",
     };
 
-    private const string LedTrioHint =
-        "Soldan sağa LED 1, LED 2 ve LED 3. Her ışık yalnız seçtiğin bilgiyi gösterir.";
+    private const string LedTrioHint = "Her ışık yalnız seçtiğin bilgiyi gösterir.";
 
     private static string LedModeHelp(byte mode) => mode switch
     {
         Protocol.LedOff => "Sürekli kapalı. Bu ışık hiç yanmaz.",
-        Protocol.LedBatteryLevel => "Pil seviyesi. Azaldıkça değişir: %100, %75, %50, %25.",
-        Protocol.LedConnectionQuality => "Bağlantı kalitesi. Sinyalin gücü: mükemmel, iyi, fena değil, zayıf.",
+        Protocol.LedBatteryLevel => "Pil seviyesi. %100 yeşil, %75 sarı, %50 turuncu, %25 kırmızı.",
+        Protocol.LedConnectionQuality => "Bağlantı kalitesi. Mükemmel yeşil, iyi sarı, fena değil turuncu, zayıf kırmızı.",
         Protocol.LedPollingRate => "Polling Rate. 125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı.",
         Protocol.LedDpiStage => "DPI kademesi. Alttaki tuşun kademesi: 1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı.",
         _ => "",
@@ -2318,7 +2334,7 @@ public partial class MainWindow : Window
 
         if (_device.Pid != 0x00B3)
         {
-            DongleLedPanel.Visibility = Visibility.Collapsed;
+            ShowRememberedDongleLeds();
             return;
         }
 
@@ -2333,12 +2349,55 @@ public partial class MainWindow : Window
         ShowDongleLed(mode);
     }
 
-    private void ShowDongleLed(byte mode)
+    /// <summary>
+    /// Fare kabloyla takiliyken (sarj) dongle'a ulasilmaz. Kart gizlenmez: son okunan ayarla kalir,
+    /// secimler pasif, isiklar sonuk ve sarj uyarisi gorunur. Daha once hic okunmadiysa kart gizlenir.
+    /// </summary>
+    private void ShowRememberedDongleLeds()
+    {
+        var last = _settings.LastDongleLeds;
+        if (_device?.Info.Mode != HidWin.LinkMode.Wired || last is not { Count: 1 or 3 } || last.Any(v => v is < 0 or > 255))
+        {
+            DongleLedPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var modes = last.Select(v => (byte)v).ToArray();
+        if (modes.Length == 3)
+        {
+            ShowDongleLeds(modes, live: false);
+        }
+        else
+        {
+            ShowDongleLed(modes[0], live: false);
+        }
+    }
+
+    /// <summary>Okunan veya yazilan LED ayarini sakla (kabloyla sarjda kart bununla gosterilir).</summary>
+    private void RememberDongleLeds(params byte[] modes)
+    {
+        var values = modes.Select(m => (int)m).ToList();
+        if (_settings.LastDongleLeds is { } old && old.SequenceEqual(values))
+        {
+            return;
+        }
+
+        _settings.LastDongleLeds = values;
+        _settings.Save();
+    }
+
+    private void ShowDongleLed(byte mode, bool live = true)
     {
         bool wasHidden = DongleLedPanel.Visibility != Visibility.Visible;
         DongleLedPanel.Visibility = Visibility.Visible;
         LedTrioPanel.Visibility = Visibility.Collapsed;
         LedClassicPanel.Visibility = Visibility.Visible;
+        LedClassicPanel.IsEnabled = live;
+        if (live)
+        {
+            RememberDongleLeds(mode);
+        }
+
         _syncingUi = true;
         try
         {
@@ -2352,21 +2411,28 @@ public partial class MainWindow : Window
             _syncingUi = false;
         }
 
+        UpdateDongleArt();
         if (wasHidden)
         {
             FitWindowToContent();
         }
     }
 
-    private void ShowDongleLeds(byte[] modes)
+    private void ShowDongleLeds(byte[] modes, bool live = true)
     {
         bool wasHidden = DongleLedPanel.Visibility != Visibility.Visible || LedTrioPanel.Visibility != Visibility.Visible;
+        if (live)
+        {
+            RememberDongleLeds(modes);
+        }
+
         _syncingUi = true;
         try
         {
             DongleLedPanel.Visibility = Visibility.Visible;
             LedClassicPanel.Visibility = Visibility.Collapsed;
             LedTrioPanel.Visibility = Visibility.Visible;
+            LedTrioPanel.IsEnabled = live;
             EnsureLedTrioItems();
             SelectLedMode(Led1Box, modes[0]);
             SelectLedMode(Led2Box, modes[1]);
@@ -2381,10 +2447,150 @@ public partial class MainWindow : Window
             _syncingUi = false;
         }
 
+        UpdateDongleArt();
         if (wasHidden)
         {
             FitWindowToContent();
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Dongle cizimi: isiklar secilen moda ve cihazin o anki durumuna gore renklenir
+    // ------------------------------------------------------------------
+
+    // Razer'in yarim kure dongle tanitimindaki renkler (Viper V4 Pro urun sayfasi).
+    private static readonly Color LedWhite = Color.FromRgb(0xF2, 0xF4, 0xF5);
+    private static readonly Color LedGreen = Color.FromRgb(0x44, 0xD6, 0x2C);
+    private static readonly Color LedYellow = Color.FromRgb(0xFF, 0xFF, 0x00);
+    private static readonly Color LedOrange = Color.FromRgb(0xF7, 0x94, 0x1D);
+    private static readonly Color LedRed = Color.FromRgb(0xFF, 0x00, 0x00);
+    private static readonly Color LedBlue = Color.FromRgb(0x00, 0x72, 0xBC);
+    private static readonly Color LedPurple = Color.FromRgb(0x66, 0x2D, 0x91);
+    private static readonly Color LedCyan = Color.FromRgb(0x2A, 0xD4, 0xE0);
+
+    /// <summary>Fare sarjda (kablo takili veya pil sarj oluyor): dongle isigi soner.</summary>
+    private bool DongleLedsDark =>
+        _device?.Info.Mode == HidWin.LinkMode.Wired || _lastBattery?.Charging == true;
+
+    /// <summary>Pil rengi: %100 yesil, %66 sari, %33 turuncu, %0 kirmizi; en yakin esik secilir.</summary>
+    private static Color BatteryLedColor(int percent) => percent switch
+    {
+        >= 83 => LedGreen,
+        >= 50 => LedYellow,
+        >= 17 => LedOrange,
+        _ => LedRed,
+    };
+
+    /// <summary>Yarim kure dongle pil isigi: %100 yesil, %75 sari, %50 turuncu, %25 kirmizi (dilimler).</summary>
+    private static Color TrioBatteryLedColor(int percent) => percent switch
+    {
+        > 75 => LedGreen,
+        > 50 => LedYellow,
+        > 25 => LedOrange,
+        _ => LedRed,
+    };
+
+    private static Color PollingLedColor(int hz) => hz switch
+    {
+        <= 125 => LedPurple,
+        <= 500 => LedBlue,
+        <= 1000 => LedGreen,
+        <= 2000 => LedYellow,
+        <= 4000 => LedOrange,
+        _ => LedRed,
+    };
+
+    // Razer kilavuzlarindaki kademe renkleri (DeathAdder V3 HyperSpeed, Viper V3 HyperSpeed): 1 kirmizi,
+    // 2 yesil, 3 mavi, 4 camgobegi, 5 sari.
+    private static Color? StageLedColor(int stage) => stage switch
+    {
+        1 => LedRed,
+        2 => LedGreen,
+        3 => LedBlue,
+        4 => LedCyan,
+        5 => LedYellow,
+        _ => null,
+    };
+
+    private int ActiveStage => Array.FindIndex(StageRadios, r => r.IsChecked == true) + 1;
+
+    /// <summary>Tek LED'li HyperPolling dongle; null = sonuk.</summary>
+    private Color? ClassicLedColor()
+    {
+        int? battery = _lastBattery?.Percent;
+        if (LedConnection.IsChecked == true)
+        {
+            return LedWhite;
+        }
+
+        if (LedBattery.IsChecked == true)
+        {
+            return battery is int p ? BatteryLedColor(p) : null;
+        }
+
+        // Yalnizca dusuk pil: normalde kapali, esigin altinda kirmizi.
+        return LedWarning.IsChecked == true && battery is int low && low <= _settings.LowBatteryPercent ? LedRed : null;
+    }
+
+    /// <summary>
+    /// Uc LED'li yarim kure dongle. Baglanti kalitesi cihazdan okunamadigi icin bagliyken yesil
+    /// (mukemmel) gosterilir; pil, polling ve kademe gercek degerden hesaplanir.
+    /// </summary>
+    private Color? TrioLedColor(ComboBox box) => SelectedLedMode(box) switch
+    {
+        Protocol.LedBatteryLevel => _lastBattery?.Percent is int p ? TrioBatteryLedColor(p) : null,
+        Protocol.LedConnectionQuality => _linkReady ? LedGreen : null,
+        Protocol.LedPollingRate => _lastHz > 0 ? PollingLedColor(_lastHz) : null,
+        Protocol.LedDpiStage => StageLedColor(ActiveStage),
+        _ => null,
+    };
+
+    private void UpdateDongleArt()
+    {
+        if (DongleLedPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        bool trio = LedTrioPanel.Visibility == Visibility.Visible;
+        StickDongleArt.Visibility = trio ? Visibility.Collapsed : Visibility.Visible;
+        DomeDongleArt.Visibility = trio ? Visibility.Visible : Visibility.Collapsed;
+
+        bool dark = DongleLedsDark;
+        if (trio)
+        {
+            PaintLed(DomeLed1, dark ? null : TrioLedColor(Led1Box), 18);
+            PaintLed(DomeLed2, dark ? null : TrioLedColor(Led2Box), 18);
+            PaintLed(DomeLed3, dark ? null : TrioLedColor(Led3Box), 18);
+        }
+        else
+        {
+            PaintLed(StickLed, dark ? null : ClassicLedColor(), 40);
+        }
+
+        bool wired = _device?.Info.Mode == HidWin.LinkMode.Wired;
+        LedChargingNote.Visibility = dark ? Visibility.Visible : Visibility.Collapsed;
+        LedChargingText.Text = wired && !(trio ? LedTrioPanel.IsEnabled : LedClassicPanel.IsEnabled)
+            ? "Fare şarja takılı; dongle ışığı kapalı. Kablo çıkınca ayarı değiştirebilirsin."
+            : "Fare şarja takılı; dongle ışığı kapalı.";
+    }
+
+    /// <summary>Isik: renk varsa parlayan nokta, yoksa sonuk gri.</summary>
+    private static void PaintLed(System.Windows.Shapes.Shape led, Color? color, double glow)
+    {
+        if (color is not Color c)
+        {
+            led.Fill = new SolidColorBrush(Color.FromRgb(0x2A, 0x2D, 0x31));
+            led.Stroke = new SolidColorBrush(Color.FromArgb(70, 255, 255, 255));
+            led.StrokeThickness = 1;
+            led.Effect = null;
+            return;
+        }
+
+        var hi = Color.FromRgb((byte)Math.Min(255, c.R + 70), (byte)Math.Min(255, c.G + 70), (byte)Math.Min(255, c.B + 70));
+        led.Fill = new RadialGradientBrush(hi, c);
+        led.StrokeThickness = 0;
+        led.Effect = new System.Windows.Media.Effects.DropShadowEffect { Color = c, BlurRadius = glow, ShadowDepth = 0, Opacity = 0.95 };
     }
 
     private void EnsureLedTrioItems()
@@ -2396,11 +2602,11 @@ public partial class MainWindow : Window
 
         (byte Mode, string Label)[] choices =
         [
-            (Protocol.LedOff, "Sürekli kapalı"),
+            (Protocol.LedOff, "Kapalı"),
             (Protocol.LedBatteryLevel, "Pil seviyesi"),
-            (Protocol.LedConnectionQuality, "Bağlantı kalitesi"),
+            (Protocol.LedConnectionQuality, "Bağlantı"),
             (Protocol.LedPollingRate, "Polling Rate"),
-            (Protocol.LedDpiStage, "DPI kademesi"),
+            (Protocol.LedDpiStage, "Kademe"),
         ];
         foreach (var box in new[] { Led1Box, Led2Box, Led3Box })
         {
@@ -2464,6 +2670,8 @@ public partial class MainWindow : Window
             }
 
             StatusText.Text = "Dongle LED uygulandı";
+            RememberDongleLeds(modes);
+            UpdateDongleArt();
         }
         catch (Exception ex)
         {
@@ -2505,6 +2713,8 @@ public partial class MainWindow : Window
 
             LedHint.Text = LedHintText(mode);
             StatusText.Text = "Dongle LED uygulandı";
+            RememberDongleLeds(mode);
+            UpdateDongleArt();
         }
         catch (Exception ex)
         {
@@ -2617,6 +2827,7 @@ public partial class MainWindow : Window
         StagesHeaderText.Text = active is null
             ? $"{set.Stages.Count} Kademe"
             : $"Aktif: {active.X} DPI  ·  {set.Stages.Count} Kademe";
+        UpdateDongleArt();
     }
 
     private async void WriteStagesButton_Click(object sender, RoutedEventArgs e)
@@ -2638,6 +2849,7 @@ public partial class MainWindow : Window
         }
 
         await WriteStagesAsync("secim");
+        UpdateDongleArt();
     }
 
     private async Task WriteStagesAsync(string source)
@@ -2829,6 +3041,7 @@ public partial class MainWindow : Window
                 SelectHz(readHz);
                 _lastHz = readHz;
                 UpdateLowPowerGate();
+                UpdateDongleArt();
             }
 
             bool dpiOk = Protocol.IsSuccess(dpi.Status);
@@ -2977,6 +3190,7 @@ public partial class MainWindow : Window
                 SelectHz(verifyPoll.Hz!.Value);
                 _lastHz = verifyPoll.Hz.Value;
                 UpdateLowPowerGate();
+                UpdateDongleArt();
             }
 
             if (dpiVerified && pollVerified)

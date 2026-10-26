@@ -466,16 +466,21 @@
                     <Grid>
 
                 <!-- ======================= ANA SAYFA ======================= -->
-                <Grid Visibility="{Binding IsChecked, ElementName=NavHome, Converter={StaticResource BoolToVis}}">
+                <!-- Icerik pencereyi doldurmak icin uzamaz: kartlar dogal boyunda, iki sutunun alti hizali
+                     (kisa sutunun son karti diger sutunun boyuna kadar uzar). Buyuk pencerede tum arayuz
+                     orantili buyur, bkz. UpdateUiScale. -->
+                <Grid Visibility="{Binding IsChecked, ElementName=NavHome, Converter={StaticResource BoolToVis}}" VerticalAlignment="Top">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="1.2*"/>
                         <ColumnDefinition Width="18"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Sol: DPI kart + kademeler (kademeler kalan yeri doldurur) -->
+                    <!-- Sol: DPI kart + kademeler + bosta uyku -->
                     <Grid>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="18"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="18"/>
                             <RowDefinition Height="*"/>
@@ -718,19 +723,8 @@
                                 </Grid>
                             </StackPanel>
                         </Expander>
-                    </Grid>
 
-                    <!-- Sag: cihaz kartlari (cihaz destekliyorsa gorunur; gorunen son kart kalan yeri doldurur,
-                         bkz. UpdateDeviceCardFill) -->
-                    <Grid x:Name="DeviceCardColumn" Grid.Column="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <ContentControl x:Name="SleepPanel" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
+                        <ContentControl x:Name="SleepPanel" Grid.Row="4" Visibility="Collapsed" Style="{StaticResource DeepCardHost}">
                             <StackPanel>
                                 <DockPanel>
                                     <Border DockPanel.Dock="Right" Style="{StaticResource DeepPill}">
@@ -753,8 +747,18 @@
                                 </Grid>
                             </StackPanel>
                         </ContentControl>
+                    </Grid>
 
-                        <ContentControl x:Name="LowPowerPanel" Grid.Row="1" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
+                    <!-- Sag: cihaz kartlari (cihaz destekliyorsa gorunur; gorunen son kart sol sutunun boyuna
+                         kadar uzar, bkz. UpdateDeviceCardFill) -->
+                    <Grid x:Name="DeviceCardColumn" Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <ContentControl x:Name="LowPowerPanel" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
                             <StackPanel>
                                 <DockPanel>
                                     <Border DockPanel.Dock="Right" Style="{StaticResource DeepPill}">
@@ -782,7 +786,7 @@
                             </StackPanel>
                         </ContentControl>
 
-                        <ContentControl x:Name="SurfacePanel" Grid.Row="2" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
+                        <ContentControl x:Name="SurfacePanel" Grid.Row="1" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" Margin="0,0,0,16">
                             <StackPanel>
                                 <DockPanel>
                                     <Border DockPanel.Dock="Right" Style="{StaticResource DeepPill}">
@@ -847,8 +851,15 @@
                             </StackPanel>
                         </ContentControl>
 
-                        <ContentControl x:Name="DongleLedPanel" Grid.Row="3" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" VerticalAlignment="Stretch">
-                            <StackPanel>
+                        <!-- Dongle LED: baslik / dongle cizimi (isiklar secime ve cihaz durumuna gore renklenir,
+                             kartin fazla boyunu bu satir alir) / secimler. Bkz. UpdateDongleArt. -->
+                        <ContentControl x:Name="DongleLedPanel" Grid.Row="2" Visibility="Collapsed" Style="{StaticResource DeepCardHost}" VerticalAlignment="Stretch">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*" MinHeight="96"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
                                 <DockPanel>
                                     <Viewbox Style="{StaticResource DeepIcon}">
                                         <Canvas Width="24" Height="24"><Path Style="{StaticResource GlowIcon}" Data="{StaticResource IcoBulb}"/></Canvas>
@@ -858,6 +869,43 @@
                                         <TextBlock x:Name="LedHint" Style="{StaticResource DeepSub}" TextWrapping="Wrap" TextTrimming="None"/>
                                     </StackPanel>
                                 </DockPanel>
+
+                                <!-- HyperPolling dongle (gorselin kendi LED'i silindi; isik StickLed ile cizilir) -->
+                                <Viewbox x:Name="StickDongleArt" Grid.Row="1" MaxHeight="170" Margin="0,4" Stretch="Uniform">
+                                    <Canvas Width="614" Height="517">
+                                        <Image Source="pack://application:,,,/Assets/dongle_hyperpolling.png" Width="614" Height="517"
+                                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                                        <Ellipse x:Name="StickLed" Width="17" Height="17" Canvas.Left="443.5" Canvas.Top="212.5"/>
+                                    </Canvas>
+                                </Viewbox>
+
+                                <!-- Yarim kure dongle (DeathAdder V4 Pro): soldan saga LED 1-3 -->
+                                <Viewbox x:Name="DomeDongleArt" Grid.Row="1" MaxHeight="120" Margin="0,10,0,6" Stretch="Uniform" Visibility="Collapsed">
+                                    <Canvas Width="200" Height="96">
+                                        <Path Data="M 20,84 A 80,72 0 0 1 180,84 Z" Stroke="#4A5057" StrokeThickness="1.4">
+                                            <Path.Fill>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                    <GradientStop Color="#2C3035" Offset="0"/>
+                                                    <GradientStop Color="#141619" Offset="1"/>
+                                                </LinearGradientBrush>
+                                            </Path.Fill>
+                                        </Path>
+                                        <Rectangle Canvas.Left="14" Canvas.Top="84" Width="172" Height="6" RadiusX="3" RadiusY="3" Fill="#303439"/>
+                                        <TextBlock Canvas.Left="75.5" Canvas.Top="46" Text="1" FontSize="9" Foreground="#8A9096"/>
+                                        <TextBlock Canvas.Left="97.5" Canvas.Top="46" Text="2" FontSize="9" Foreground="#8A9096"/>
+                                        <TextBlock Canvas.Left="119.5" Canvas.Top="46" Text="3" FontSize="9" Foreground="#8A9096"/>
+                                        <Ellipse x:Name="DomeLed1" Canvas.Left="71.5" Canvas.Top="62" Width="13" Height="13"/>
+                                        <Ellipse x:Name="DomeLed2" Canvas.Left="93.5" Canvas.Top="62" Width="13" Height="13"/>
+                                        <Ellipse x:Name="DomeLed3" Canvas.Left="115.5" Canvas.Top="62" Width="13" Height="13"/>
+                                    </Canvas>
+                                </Viewbox>
+
+                                <StackPanel Grid.Row="2">
+                                <!-- Fare sarjdayken (kablo takili) dongle isigi soner; kart son ayarla kalir -->
+                                <Border x:Name="LedChargingNote" Visibility="Collapsed" Margin="0,8,0,0" Padding="12,8" CornerRadius="10"
+                                        Background="#1AE0B040" BorderBrush="#55E0B040" BorderThickness="1">
+                                    <TextBlock x:Name="LedChargingText" Foreground="{StaticResource WarnBrush}" FontSize="12" TextWrapping="Wrap"/>
+                                </Border>
                                 <UniformGrid x:Name="LedClassicPanel" Rows="1" Margin="-4,14,-4,0">
                                     <RadioButton x:Name="LedConnection" GroupName="DongleLed" Content="Bağlantı" Style="{StaticResource DeepSegRadio}"
                                                  Checked="DongleLed_Checked"/>
@@ -888,7 +936,8 @@
                                     <TextBlock x:Name="Led2Help" Style="{StaticResource DeepSub}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                     <TextBlock x:Name="Led3Help" Style="{StaticResource DeepSub}" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                 </StackPanel>
-                            </StackPanel>
+                                </StackPanel>
+                            </Grid>
                         </ContentControl>
                     </Grid>
                 </Grid>
