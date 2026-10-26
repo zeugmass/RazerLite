@@ -2312,7 +2312,17 @@ public partial class MainWindow : Window
     };
 
     private const string LedTrioHint =
-        "Her LED ayrı yanar. Pil %100–%25, bağlantı mükemmelden zayıfa, yoklama 125–8000 Hz, DPI kademesi 1–5.";
+        "Soldan sağa LED 1, LED 2 ve LED 3. Her ışık yalnız seçtiğin bilgiyi gösterir.";
+
+    private static string LedModeHelp(byte mode) => mode switch
+    {
+        Protocol.LedOff => "Sürekli kapalı. Bu ışık hiç yanmaz.",
+        Protocol.LedBatteryLevel => "Pil seviyesi. Azaldıkça değişir: %100, %75, %50, %25.",
+        Protocol.LedConnectionQuality => "Bağlantı kalitesi. Sinyalin gücü: mükemmel, iyi, fena değil, zayıf.",
+        Protocol.LedPollingRate => "Yoklama hızı. 125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı.",
+        Protocol.LedDpiStage => "DPI kademesi. Alttaki tuşun kademesi: 1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı.",
+        _ => "",
+    };
 
     private async Task ReadIndicatorLedAsync()
     {
@@ -2350,6 +2360,7 @@ public partial class MainWindow : Window
         }
 
         ShowDongleLed(mode);
+        ShowDongleLeds(new byte[] { Protocol.LedConnectionQuality, Protocol.LedBatteryLevel, Protocol.LedPollingRate });
     }
 
     private void ShowDongleLed(byte mode)
@@ -2390,6 +2401,9 @@ public partial class MainWindow : Window
             SelectLedMode(Led1Box, modes[0]);
             SelectLedMode(Led2Box, modes[1]);
             SelectLedMode(Led3Box, modes[2]);
+            Led1Help.Text = "LED 1. " + LedModeHelp(modes[0]);
+            Led2Help.Text = "LED 2. " + LedModeHelp(modes[1]);
+            Led3Help.Text = "LED 3. " + LedModeHelp(modes[2]);
             LedHint.Text = LedTrioHint;
         }
         finally
@@ -2412,10 +2426,10 @@ public partial class MainWindow : Window
 
         (byte Mode, string Label)[] choices =
         [
-            (Protocol.LedOff, "Kapalı"),
-            (Protocol.LedBatteryLevel, "Pil"),
-            (Protocol.LedConnectionQuality, "Bağlantı"),
-            (Protocol.LedPollingRate, "Yoklama"),
+            (Protocol.LedOff, "Sürekli kapalı"),
+            (Protocol.LedBatteryLevel, "Pil seviyesi"),
+            (Protocol.LedConnectionQuality, "Bağlantı kalitesi"),
+            (Protocol.LedPollingRate, "Yoklama hızı"),
             (Protocol.LedDpiStage, "DPI kademesi"),
         ];
         foreach (var box in new[] { Led1Box, Led2Box, Led3Box })
@@ -2457,6 +2471,10 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        Led1Help.Text = "LED 1. " + LedModeHelp(first);
+        Led2Help.Text = "LED 2. " + LedModeHelp(second);
+        Led3Help.Text = "LED 3. " + LedModeHelp(third);
 
         SetBusy(true);
         Led1Box.IsEnabled = false;
