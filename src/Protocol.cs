@@ -738,26 +738,26 @@ internal static class Protocol
                 continue;
             }
 
-            if (!response.IsSuccessStatusCode)
-            {
-                return default;
-            }
-
-            if (IsFirmwareFile(current))
+            if (IsFirmwareFile(current) && response.IsSuccessStatusCode)
             {
                 return new ResolvedLink(null, current.AbsoluteUri, null, false);
             }
 
             if (!current.Host.Equals("mysupport.razer.com", StringComparison.OrdinalIgnoreCase))
             {
-                return new ResolvedLink(null, null, current.AbsoluteUri, false);
+                return response.IsSuccessStatusCode
+                    ? new ResolvedLink(null, null, current.AbsoluteUri, false)
+                    : default;
             }
 
-            var body = await ReadLimitedAsync(response.Content, 1_000_000);
+            var body = response.IsSuccessStatusCode
+                ? await ReadLimitedAsync(response.Content, 1_000_000)
+                : "";
             if (!TryParseSupportUpdater(body, out var version, out var link)
                 || !Uri.TryCreate(link, UriKind.Absolute, out var fileStart))
             {
-                return new ResolvedLink(null, null, current.AbsoluteUri, false);
+                var browsed = await ReadSupportOfferAsync(current);
+                return browsed ?? new ResolvedLink(null, null, current.AbsoluteUri, false);
             }
 
             var file = await ResolveFileAsync(fileStart);
@@ -791,6 +791,128 @@ internal static class Protocol
             }
 
             return IsFirmwareFile(current) ? current.AbsoluteUri : null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Destek sitesi duz HTTP istegini 401 ile kesiyor. Kurulu Chrome veya Edge sayfayi acinca
+    /// kurulum surumu ve rzr.to adresi HTML icinde duruyor. Yalnizca mysupport.razer.com icin calisir.
+    /// </summary>
+    private static async Task<ResolvedLink?> ReadSupportOfferAsync(Uri page)
+    {
+        if (page.Scheme != Uri.UriSchemeHttps
+            || !page.Host.Equals("mysupport.razer.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var html = await ReadSupportWithBrowserAsync(page);
+        if (html is null
+            || !TryParseSupportUpdater(html, out var version, out var link)
+            || !Uri.TryCreate(link, UriKind.Absolute, out var fileStart))
+        {
+            return null;
+        }
+
+        var file = await ResolveFileAsync(fileStart);
+        return new ResolvedLink(version, file, page.AbsoluteUri, true);
+    }
+
+    private static async Task<string?> ReadSupportWithBrowserAsync(Uri page)
+    {
+        var browser = FindSystemBrowser();
+        if (browser is null)
+        {
+            return null;
+        }
+
+        var profile = Path.Combine(Path.GetTempPath(), "RazerLite-support-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        try
+        {
+            var start = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = browser,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            start.ArgumentList.Add("--headless=new");
+            start.ArgumentList.Add("--disable-gpu");
+            start.ArgumentList.Add("--no-first-run");
+            start.ArgumentList.Add("--disable-extensions");
+            start.ArgumentList.Add("--user-data-dir=" + profile);
+            start.ArgumentList.Add("--virtual-time-budget=15000");
+            start.ArgumentList.Add("--dump-dom");
+            start.ArgumentList.Add(page.AbsoluteUri);
+
+            using var process = System.Diagnostics.Process.Start(start);
+            if (process is null)
+            {
+                return null;
+            }
+
+            var output = process.StandardOutput.ReadToEndAsync();
+            var errors = process.StandardError.ReadToEndAsync();
+            using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            try
+            {
+                await process.WaitForExitAsync(cancel.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                process.Kill(entireProcessTree: true);
+                return null;
+            }
+
+            _ = await errors;
+            var html = await output;
+            return html.Contains("Firmware updater", StringComparison.OrdinalIgnoreCase) ? html : null;
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                if (Directory.Exists(profile))
+                {
+                    Directory.Delete(profile, recursive: true);
+                }
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+    }
+
+    private static string? FindSystemBrowser()
+    {
+        string programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string programs86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        string[] candidates =
+        [
+            Path.Combine(programs, "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(programs86, "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(local, "Google", "Chrome", "Application", "chrome.exe"),
+            Path.Combine(programs86, "Microsoft", "Edge", "Application", "msedge.exe"),
+            Path.Combine(programs, "Microsoft", "Edge", "Application", "msedge.exe"),
+        ];
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
         }
 
         return null;

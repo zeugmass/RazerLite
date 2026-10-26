@@ -768,14 +768,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _firmwareStatusTimer;
     private FirmwareNext _firmwareNext = FirmwareNext.Check;
     private string? _firmwareFileUrl;
-    private string? _firmwarePageUrl;
     private string? _firmwareFileName;
 
     private enum FirmwareNext
     {
         Check,
         Download,
-        OpenPage,
     }
     private int _surfaceMm = 2;
     private bool _surfaceAsymmetric;
@@ -1814,12 +1812,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_firmwareNext == FirmwareNext.OpenPage)
-        {
-            OpenFirmwarePage();
-            return;
-        }
-
         if (_mouseFirmware is null && _dongleFirmware is null)
         {
             return;
@@ -1918,19 +1910,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        Log($"FIRMWARE -> cihaz {current} / kurulum {offer.Version} sayfa={(offer.SupportPageRead ? "okundu" : "yok")}");
-        bool newer = Protocol.FirmwareIsNewer(offer.Version, current);
-        if (!offer.SupportPageRead && !newer)
+        Log($"FIRMWARE -> cihaz {current} / kurulum {offer.Version} sayfa={(offer.SupportPageRead ? "okundu" : "yok")} dosya={(offer.FileUrl is null ? "yok" : "var")}");
+        if (!offer.SupportPageRead)
         {
-            _firmwareNext = FirmwareNext.OpenPage;
-            _firmwarePageUrl = offer.PageUrl;
-            FirmwareButtonText.Text = "Destek sayfasını aç";
-            ShowFirmwareStatus(
-                $"Cihaz {current}. Synapse listesi {offer.Version}. Destek sayfası okunamadı; sitede daha yeni dosya olabilir.",
-                autoHide: false);
+            ShowFirmwareStatus("Kurulum sayfası okunamadı.", autoHide: true);
             return;
         }
 
+        bool newer = Protocol.FirmwareIsNewer(offer.Version, current);
         if (!newer)
         {
             ShowFirmwareStatus($"Cihaz {current}. Sitedeki kurulum {offer.Version}, güncel.", autoHide: true);
@@ -1939,10 +1926,7 @@ public partial class MainWindow : Window
 
         if (offer.FileUrl is null)
         {
-            _firmwareNext = FirmwareNext.OpenPage;
-            _firmwarePageUrl = offer.PageUrl;
-            FirmwareButtonText.Text = "Destek sayfasını aç";
-            ShowFirmwareStatus($"Cihaz {current}. Sitedeki kurulum {offer.Version}. Dosya adresi sayfada.", autoHide: false);
+            ShowFirmwareStatus($"Cihaz {current}. Sitedeki kurulum {offer.Version}. Dosya adresi alınamadı.", autoHide: true);
             return;
         }
 
@@ -2017,23 +2001,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenFirmwarePage()
-    {
-        if (_firmwarePageUrl is not null
-            && Uri.TryCreate(_firmwarePageUrl, UriKind.Absolute, out var uri)
-            && uri.Scheme == Uri.UriSchemeHttps
-            && (uri.Host.Equals("mysupport.razer.com", StringComparison.OrdinalIgnoreCase)
-                || uri.Host.Equals("rzr.to", StringComparison.OrdinalIgnoreCase)))
-        {
-            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-        }
-    }
-
     private void ResetFirmwareAction()
     {
         _firmwareNext = FirmwareNext.Check;
         _firmwareFileUrl = null;
-        _firmwarePageUrl = null;
         _firmwareFileName = null;
         FirmwareButtonText.Text = "Firmware güncellemesini kontrol et";
     }
