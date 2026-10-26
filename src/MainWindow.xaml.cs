@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private int _lastDpi;
     private int _lastHz;
     private Protocol.BatteryInfo? _lastBattery;
+    private byte? _linkQuality;
     private bool _needsFullRead;      // son cihaz okumasi eksik kaldi; fare yanit verince tamamla
     private bool _linkReady;          // bu oturumda DPI ve Hz bir kez okundu
     private bool _connectWaitLogged;  // ilk acilista telsiz beklerken logu tekrarlama
@@ -360,6 +361,7 @@ public partial class MainWindow : Window
         ResetFirmwareAction();
         FirmwareButton.IsEnabled = false;
         _lastBattery = null;
+        _linkQuality = null;
         _lowBatteryWarnedAt = null;
         UpdateTrayToolTip();
     }
@@ -2304,10 +2306,10 @@ public partial class MainWindow : Window
     private static string LedModeHelp(byte mode) => mode switch
     {
         Protocol.LedOff => "Sürekli kapalı. Bu ışık hiç yanmaz.",
-        Protocol.LedBatteryLevel => "Pil seviyesi. %100 yeşil, %75 sarı, %50 turuncu, %25 kırmızı.",
+        Protocol.LedBatteryLevel => "Pil seviyesi. Yüzdeye göre kırmızıdan yeşile kayar: %0 kırmızı, %50 sarı, %100 yeşil.",
         Protocol.LedConnectionQuality => "Bağlantı kalitesi. Mükemmel yeşil, iyi sarı, fena değil turuncu, zayıf kırmızı.",
         Protocol.LedPollingRate => "Polling Rate. 125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı.",
-        Protocol.LedDpiStage => "DPI kademesi. Alttaki tuşun kademesi: 1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı.",
+        Protocol.LedDpiStage => "DPI kademesi. 1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı.",
         _ => "",
     };
 
@@ -2329,6 +2331,7 @@ public partial class MainWindow : Window
         if (trio.Modes is byte[] found)
         {
             ShowDongleLeds(found);
+            await ReadLinkQualityAsync(background: false);
             return;
         }
 
@@ -2458,15 +2461,12 @@ public partial class MainWindow : Window
     // Dongle cizimi: isiklar secilen moda ve cihazin o anki durumuna gore renklenir
     // ------------------------------------------------------------------
 
-    // Razer'in yarim kure dongle tanitimindaki renkler (Viper V4 Pro urun sayfasi).
+    // Cubuk dongle: baglanti beyaz, pil %100 / %66 / %33 / %0.
     private static readonly Color LedWhite = Color.FromRgb(0xF2, 0xF4, 0xF5);
     private static readonly Color LedGreen = Color.FromRgb(0x44, 0xD6, 0x2C);
     private static readonly Color LedYellow = Color.FromRgb(0xFF, 0xFF, 0x00);
     private static readonly Color LedOrange = Color.FromRgb(0xF7, 0x94, 0x1D);
     private static readonly Color LedRed = Color.FromRgb(0xFF, 0x00, 0x00);
-    private static readonly Color LedBlue = Color.FromRgb(0x00, 0x72, 0xBC);
-    private static readonly Color LedPurple = Color.FromRgb(0x66, 0x2D, 0x91);
-    private static readonly Color LedCyan = Color.FromRgb(0x2A, 0xD4, 0xE0);
 
     /// <summary>Fare sarjda (kablo takili veya pil sarj oluyor): dongle isigi soner.</summary>
     private bool DongleLedsDark =>
@@ -2481,34 +2481,56 @@ public partial class MainWindow : Window
         _ => LedRed,
     };
 
-    /// <summary>Yarim kure dongle pil isigi: %100 yesil, %75 sari, %50 turuncu, %25 kirmizi (dilimler).</summary>
-    private static Color TrioBatteryLedColor(int percent) => percent switch
+    /// <summary>Pil isigi Synapse onizlemesi: %0 kirmizi, %50 sari, %100 yesil; arasi duz gecis.</summary>
+    private static Color TrioBatteryLedColor(int percent)
     {
-        > 75 => LedGreen,
-        > 50 => LedYellow,
-        > 25 => LedOrange,
-        _ => LedRed,
+        percent = Math.Clamp(percent, 0, 100);
+        int red;
+        int green;
+        if (percent <= 50)
+        {
+            red = 255;
+            green = (int)Math.Round(percent / 50d * 255, MidpointRounding.AwayFromZero);
+        }
+        else
+        {
+            red = (int)Math.Round(255 - (percent - 50) / 50d * 255, MidpointRounding.AwayFromZero);
+            green = 255;
+        }
+
+        return Color.FromRgb((byte)red, (byte)green, 0);
+    }
+
+    // Synapse polling tablosu: 125 #8B00FF, 500 #0000FF, 1000 #00FF00, 2000 #FFFF00, 4000 #FF7F00, 8000 #FF0000.
+    private static Color? TrioPollingLedColor(int hz) => hz switch
+    {
+        125 => Color.FromRgb(0x8B, 0x00, 0xFF),
+        500 => Color.FromRgb(0x00, 0x00, 0xFF),
+        1000 => Color.FromRgb(0x00, 0xFF, 0x00),
+        2000 => Color.FromRgb(0xFF, 0xFF, 0x00),
+        4000 => Color.FromRgb(0xFF, 0x7F, 0x00),
+        8000 => Color.FromRgb(0xFF, 0x00, 0x00),
+        _ => null,
     };
 
-    private static Color PollingLedColor(int hz) => hz switch
+    // Synapse baglanti tablosu: 1 #FF0000, 2 #FF7F00, 3 #FFFF00, 4 #00FF00.
+    private static Color? TrioLinkLedColor(byte level) => level switch
     {
-        <= 125 => LedPurple,
-        <= 500 => LedBlue,
-        <= 1000 => LedGreen,
-        <= 2000 => LedYellow,
-        <= 4000 => LedOrange,
-        _ => LedRed,
+        Protocol.LinkRed => Color.FromRgb(0xFF, 0x00, 0x00),
+        Protocol.LinkOrange => Color.FromRgb(0xFF, 0x7F, 0x00),
+        Protocol.LinkYellow => Color.FromRgb(0xFF, 0xFF, 0x00),
+        Protocol.LinkGreen => Color.FromRgb(0x00, 0xFF, 0x00),
+        _ => null,
     };
 
-    // Razer kilavuzlarindaki kademe renkleri (DeathAdder V3 HyperSpeed, Viper V3 HyperSpeed): 1 kirmizi,
-    // 2 yesil, 3 mavi, 4 camgobegi, 5 sari.
+    // Synapse kademe tablosu: 1 #FF0000, 2 #00FF00, 3 #007EF5, 4 #00FFFF, 5 #FFFF00.
     private static Color? StageLedColor(int stage) => stage switch
     {
-        1 => LedRed,
-        2 => LedGreen,
-        3 => LedBlue,
-        4 => LedCyan,
-        5 => LedYellow,
+        1 => Color.FromRgb(0xFF, 0x00, 0x00),
+        2 => Color.FromRgb(0x00, 0xFF, 0x00),
+        3 => Color.FromRgb(0x00, 0x7E, 0xF5),
+        4 => Color.FromRgb(0x00, 0xFF, 0xFF),
+        5 => Color.FromRgb(0xFF, 0xFF, 0x00),
         _ => null,
     };
 
@@ -2533,14 +2555,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Uc LED'li yarim kure dongle. Baglanti kalitesi cihazdan okunamadigi icin bagliyken yesil
-    /// (mukemmel) gosterilir; pil, polling ve kademe gercek degerden hesaplanir.
+    /// Uc LED'li yarim kure dongle. Baglanti seviyesi 0x07/0x96 ile okunur; cevap yokken
+    /// Synapse gibi yesil (mukemmel) durur. Pil, polling ve kademe Synapse tablosundan boyanir.
     /// </summary>
     private Color? TrioLedColor(ComboBox box) => SelectedLedMode(box) switch
     {
         Protocol.LedBatteryLevel => _lastBattery?.Percent is int p ? TrioBatteryLedColor(p) : null,
-        Protocol.LedConnectionQuality => _linkReady ? LedGreen : null,
-        Protocol.LedPollingRate => _lastHz > 0 ? PollingLedColor(_lastHz) : null,
+        Protocol.LedConnectionQuality => _linkQuality is byte level
+            ? TrioLinkLedColor(level)
+            : _linkReady ? TrioLinkLedColor(Protocol.LinkGreen) : null,
+        Protocol.LedPollingRate => _lastHz > 0 ? TrioPollingLedColor(_lastHz) : null,
         Protocol.LedDpiStage => StageLedColor(ActiveStage),
         _ => null,
     };
@@ -2573,6 +2597,43 @@ public partial class MainWindow : Window
         LedChargingText.Text = wired && !(trio ? LedTrioPanel.IsEnabled : LedClassicPanel.IsEnabled)
             ? "Fare şarja takılı; dongle ışığı kapalı. Kablo çıkınca ayarı değiştirebilirsin."
             : "Fare şarja takılı; dongle ışığı kapalı.";
+    }
+
+    private async Task ReadLinkQualityAsync(bool background)
+    {
+        if (_device is null || LedTrioPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        try
+        {
+            var quality = await Protocol.GetDongleConnectionQualityAsync(
+                _device, background ? 800 : Protocol.DefaultBudgetMs);
+            if (quality.Level is byte level)
+            {
+                if (_linkQuality != level)
+                {
+                    _linkQuality = level;
+                    Log($"DONGLE LINK -> {level}");
+                }
+
+                UpdateDongleArt();
+                return;
+            }
+
+            if (!background)
+            {
+                Log($"DONGLE LINK -> {Protocol.StatusText(quality.Status)}");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!background)
+            {
+                Log("DONGLE LINK -> " + ex.Message);
+            }
+        }
     }
 
     /// <summary>Isik: renk varsa parlayan nokta, yoksa sonuk gri.</summary>
@@ -2758,6 +2819,10 @@ public partial class MainWindow : Window
         try
         {
             ok = await ReadBatteryAsync(background: true);
+            if (LedTrioPanel.Visibility == Visibility.Visible)
+            {
+                await ReadLinkQualityAsync(background: true);
+            }
         }
         finally
         {

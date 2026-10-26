@@ -1,4 +1,4 @@
-# RazerLite 0.23
+# RazerLite 0.25
 
 Razer HyperPolling Wireless Dongle (`1532:00B3`) ve DeathAdder V3 Pro / Viper V3 Pro için
 Synapse'siz DPI / polling rate aracı. Tek dosya `RazerLite.exe`, Windows HID API (`HidD_SetFeature`) üzerinden konuşur;
@@ -31,17 +31,17 @@ kablo takılıyken kaydetmek kablosuz hızın üzerine yazmaz.
 Sürüm tek yerde tutulur: `src/RazerLite.csproj` içindeki `<Version>`. Başlıktaki, menüdeki ve Hakkında'daki sürüm
 yazıları buradan okunur.
 
-1. `<Version>`'ı yeni sürüme çek (ör. `0.23.0`), commit'le ve pushla.
+1. `<Version>`'ı yeni sürüme çek (ör. `0.25.0`), commit'le ve pushla.
 2. Aynı sürümle bir etiket pushla:
    ```
-   git tag v0.23.0
-   git push origin v0.23.0
+   git tag v0.25.0
+   git push origin v0.25.0
    ```
 3. GitHub Actions ([.github/workflows/release.yml](.github/workflows/release.yml)) exe'yi etiketteki sürümle derler,
-   `RazerLite v0.23.0` adlı bir release oluşturur ve `RazerLite.exe`'yi ekler. Sürüm notları commit'lerden üretilir;
+   `RazerLite v0.25.0` adlı bir release oluşturur ve `RazerLite.exe`'yi ekler. Sürüm notları commit'lerden üretilir;
    istersen release sayfasından düzenleyebilirsin.
 
-`-` içeren etiketler (ör. `v0.23.0-beta`) ön sürüm olarak işaretlenir ve programdaki denetimde görünmez.
+`-` içeren etiketler (ör. `v0.25.0-beta`) ön sürüm olarak işaretlenir ve programdaki denetimde görünmez.
 Exe imzasız olduğu için Windows SmartScreen ilk açılışta uyarı verebilir.
 
 ## Arayüz
@@ -70,7 +70,7 @@ cihaz durumu kartı (bağlantı türüne göre kablosuz / kablolu ikonu, durum v
 - Yüzey kalibrasyonu: akıllı izleme 1 / 2 / 3 mm. Asimetrik kesim açılınca kaldırma ve iniş ayrı kaydırıcı olur (1–26). Seçim anında uygulanır. Elle yüzey tarama sihirbazı yoktur
 - Yazılım sürümü: fare `0x00/0x87`, dongle `0x00/0x93`. Hakkında’daki Bağlı cihaz kartında görünür. "Firmware güncellemesini kontrol et" Razer’ın o fare için yayınladığı kurulum sürümünü okur. Daha yeniyse kayıt yeri sorulur ve kurulum dosyası indirilir. Aynı veya daha eskiyse güncel der. Dosya çalıştırılmaz, cihaza yazılmaz. Dongle’ın çip arşivi (hex zip) güncelleme olarak sunulmaz
 - Program güncellemesi: Hakkında → "Güncellemeleri denetle" GitHub'daki son release'e bakar. Yeni sürüm varsa sürüm notlarını gösterir; "İndir ve yeniden başlat" yeni `RazerLite.exe`'yi yalnızca bu reponun release'inden indirir, boyut / exe başlığı / (GitHub veriyorsa) SHA-256 ile doğrular, eskisinin yerine koyar ve programı yeniden açar (bir adım başarısız olursa eski exe geri konur). Ayarlar'daki anahtar açıkken açılışta günde en fazla bir kez kendiliğinden denetler; yeni sürüm varsa menüde Hakkında'nın yanında yeşil nokta ve tepsi bildirimi çıkar
-- Dongle LED. Çubuk dongle (`00B3`): Bağlantı, Pil durumu, Yalnızca düşük pil. Üç LED'li yarım küre dongle Windows'ta ayrı cihaz açmaz; DeathAdder V4 Pro kablosuz (`00BF`) üzerinden okunur. Cevap gelirse soldan sağa LED 1, LED 2 ve LED 3 ayrı seçilir: sürekli kapalı, pil seviyesi (%100–%25), bağlantı kalitesi (mükemmelden zayıfa), Polling Rate (125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı) veya DPI kademesi (1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı). Seçilenin anlamı kutunun altında yazar. Cevap yoksa kart gizlenir
+- Dongle LED. Çubuk dongle (`00B3`): Bağlantı, Pil durumu, Yalnızca düşük pil. Üç LED'li yarım küre dongle Windows'ta ayrı cihaz açmaz; DeathAdder V4 Pro kablosuz (`00BF`) üzerinden okunur. Cevap gelirse soldan sağa LED 1, LED 2 ve LED 3 ayrı seçilir. Pil ışığı yüzdeye göre kırmızıdan yeşile kayar (%50 sarı, %100 yeşil). Bağlantı kalitesi cihazdan okunur: zayıf kırmızı, fena değil turuncu, iyi sarı, mükemmel yeşil. Polling Rate: 125 mor, 500 mavi, 1000 yeşil, 2000 sarı, 4000 turuncu, 8000 kırmızı. DPI kademesi: 1 kırmızı, 2 yeşil, 3 mavi, 4 camgöbeği, 5 sarı. Seçilenin anlamı kutunun altında yazar. Cevap yoksa kart gizlenir
 - DPI kademeleri: farenin altındaki DPI tuşunun döndüğü 1–5 kademelik tablo okunur ve tablonun tamamı fareye yazılır. Bu tablo profilde saklanmaz
 - Profiller (en fazla 5): her biri bir DPI, bir kablolu Hz ve bir kablosuz Hz tutar. Aktif bağlantının hızı uygulanır, diğeri durur. Kaydet / güncelle / sil; `Ctrl+Alt+1…5` global kısayol veya tepsi menüsünden tek tıkla uygula
 - Sistem tepsisi: X'e basınca tepsiye küçülür (kapatılabilir), çift tık geri getirir, sağ tık menüsünde profiller ve çıkış

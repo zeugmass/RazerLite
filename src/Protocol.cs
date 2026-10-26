@@ -583,6 +583,26 @@ internal static class Protocol
         return reply[0];
     }
 
+    // Synapse "Get Dongle Connection Quality Status": [boyut 1, sinif 0x07, komut 0x96].
+    // Donus bayti 1 kirmizi, 2 turuncu, 3 sari, 4 yesil. Boyut veya yanki tutmuyorsa seviye yoktur.
+    public const byte LinkRed = 1;
+    public const byte LinkOrange = 2;
+    public const byte LinkYellow = 3;
+    public const byte LinkGreen = 4;
+
+    public static async Task<(byte? Level, byte Status)> GetDongleConnectionQualityAsync(
+        HidWin.Device device, int budgetMs = 800)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x01, 0x07, 0x96, [0x00]), budgetMs);
+        if (!IsSuccess(reply[0]) || reply[5] != 0x01 || reply[6] != 0x07 || reply[7] != 0x96
+            || reply[8] is < LinkRed or > LinkGreen)
+        {
+            return (null, reply[0]);
+        }
+
+        return (reply[8], reply[0]);
+    }
+
     // Yazilim surumu. Synapse getExtendedFirmwareVersion: [boyut 4, sinif 0x00, komut 0x87].
     // Dock (dongle) surumu getDockExtendedFirmwareVersion: [4, 0x00, 0x93].
     // Yanit: major.minor.internal.reserved.
