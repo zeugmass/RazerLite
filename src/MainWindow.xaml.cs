@@ -2316,12 +2316,15 @@ public partial class MainWindow : Window
 
     private async Task ReadIndicatorLedAsync()
     {
-        if (_device is null || _device.Pid != 0x00B3)
+        if (_device is null)
         {
             DongleLedPanel.Visibility = Visibility.Collapsed;
             return;
         }
 
+        // Yarim kure dongle Windows'ta ayri cihaz acmaz; DeathAdder V4 Pro kablosuz 00BF
+        // uzerinden konusur. Uc LED okumasi bu yuzden her baglantida denenir. Tek LED'li
+        // eski kart yalnizca HyperPolling dongle'inda (00B3) kalir.
         var trio = await Protocol.GetIndicatorLedsAsync(_device);
         Log(trio.Modes is byte[] modes
             ? $"DONGLE LED3 -> {modes[0]},{modes[1]},{modes[2]}"
@@ -2329,6 +2332,12 @@ public partial class MainWindow : Window
         if (trio.Modes is byte[] found)
         {
             ShowDongleLeds(found);
+            return;
+        }
+
+        if (_device.Pid != 0x00B3)
+        {
+            DongleLedPanel.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -2437,7 +2446,7 @@ public partial class MainWindow : Window
 
     private async void LedTrio_Changed(object sender, SelectionChangedEventArgs e)
     {
-        if (_syncingUi || _busy || _device is null || _device.Pid != 0x00B3 || LedTrioPanel.Visibility != Visibility.Visible)
+        if (_syncingUi || _busy || _device is null || LedTrioPanel.Visibility != Visibility.Visible)
         {
             return;
         }
