@@ -2311,11 +2311,24 @@ public partial class MainWindow : Window
         _ => "",
     };
 
+    private const string LedTrioHint =
+        "Her LED ayrı yanar. Pil %100–%25, bağlantı mükemmelden zayıfa, yoklama 125–8000 Hz, DPI kademesi 1–5.";
+
     private async Task ReadIndicatorLedAsync()
     {
         if (_device is null || _device.Pid != 0x00B3)
         {
             DongleLedPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var trio = await Protocol.GetIndicatorLedsAsync(_device);
+        Log(trio.Modes is byte[] modes
+            ? $"DONGLE LED3 -> {modes[0]},{modes[1]},{modes[2]}"
+            : $"DONGLE LED3 -> {Protocol.StatusText(trio.Status)}");
+        if (trio.Modes is byte[] found)
+        {
+            ShowDongleLeds(found);
             return;
         }
 
@@ -2334,6 +2347,8 @@ public partial class MainWindow : Window
     {
         bool wasHidden = DongleLedPanel.Visibility != Visibility.Visible;
         DongleLedPanel.Visibility = Visibility.Visible;
+        LedTrioPanel.Visibility = Visibility.Collapsed;
+        LedClassicPanel.Visibility = Visibility.Visible;
         _syncingUi = true;
         try
         {
@@ -2353,9 +2368,123 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ShowDongleLeds(byte[] modes)
+    {
+        bool wasHidden = DongleLedPanel.Visibility != Visibility.Visible || LedTrioPanel.Visibility != Visibility.Visible;
+        _syncingUi = true;
+        try
+        {
+            DongleLedPanel.Visibility = Visibility.Visible;
+            LedClassicPanel.Visibility = Visibility.Collapsed;
+            LedTrioPanel.Visibility = Visibility.Visible;
+            EnsureLedTrioItems();
+            SelectLedMode(Led1Box, modes[0]);
+            SelectLedMode(Led2Box, modes[1]);
+            SelectLedMode(Led3Box, modes[2]);
+            LedHint.Text = LedTrioHint;
+        }
+        finally
+        {
+            _syncingUi = false;
+        }
+
+        if (wasHidden)
+        {
+            FitWindowToContent();
+        }
+    }
+
+    private void EnsureLedTrioItems()
+    {
+        if (Led1Box.Items.Count > 0)
+        {
+            return;
+        }
+
+        (byte Mode, string Label)[] choices =
+        [
+            (Protocol.LedOff, "Kapalı"),
+            (Protocol.LedBatteryLevel, "Pil"),
+            (Protocol.LedConnectionQuality, "Bağlantı"),
+            (Protocol.LedPollingRate, "Yoklama"),
+            (Protocol.LedDpiStage, "DPI kademesi"),
+        ];
+        foreach (var box in new[] { Led1Box, Led2Box, Led3Box })
+        {
+            foreach (var choice in choices)
+            {
+                box.Items.Add(new ComboBoxItem { Content = choice.Label, Tag = choice.Mode });
+            }
+        }
+    }
+
+    private static void SelectLedMode(ComboBox box, byte mode)
+    {
+        foreach (ComboBoxItem item in box.Items)
+        {
+            if (item.Tag is byte value && value == mode)
+            {
+                box.SelectedItem = item;
+                return;
+            }
+        }
+
+        box.SelectedIndex = -1;
+    }
+
+    private static byte? SelectedLedMode(ComboBox box) =>
+        box.SelectedItem is ComboBoxItem { Tag: byte mode } ? mode : null;
+
+    private async void LedTrio_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingUi || _busy || _device is null || _device.Pid != 0x00B3 || LedTrioPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        if (SelectedLedMode(Led1Box) is not byte first
+            || SelectedLedMode(Led2Box) is not byte second
+            || SelectedLedMode(Led3Box) is not byte third)
+        {
+            return;
+        }
+
+        SetBusy(true);
+        Led1Box.IsEnabled = false;
+        Led2Box.IsEnabled = false;
+        Led3Box.IsEnabled = false;
+        try
+        {
+            await Protocol.EnsureDriverModeAsync(_device, Log);
+            var modes = new[] { first, second, third };
+            var status = await Protocol.SetIndicatorLedsAsync(_device, modes);
+            Log($"DONGLE LED3 SET -> {first},{second},{third} {Protocol.StatusText(status)}");
+            if (!Protocol.IsSuccess(status))
+            {
+                StatusText.Text = "Dongle LED yazılamadı";
+                await ReadIndicatorLedAsync();
+                return;
+            }
+
+            StatusText.Text = "Dongle LED uygulandı";
+        }
+        catch (Exception ex)
+        {
+            Log("DONGLE LED ERROR -> " + ex.Message);
+            StatusText.Text = "Dongle LED yazılamadı";
+        }
+        finally
+        {
+            Led1Box.IsEnabled = true;
+            Led2Box.IsEnabled = true;
+            Led3Box.IsEnabled = true;
+            SetBusy(false);
+        }
+    }
+
     private async void DongleLed_Checked(object sender, RoutedEventArgs e)
     {
-        if (_syncingUi || _busy || _device is null || _device.Pid != 0x00B3)
+        if (_syncingUi || _busy || _device is null || _device.Pid != 0x00B3 || LedClassicPanel.Visibility != Visibility.Visible)
         {
             return;
         }

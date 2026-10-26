@@ -532,6 +532,57 @@ internal static class Protocol
         return reply[0];
     }
 
+    // Yarim kure dongle: uc LED, her biri ayri. Synapse get/set indicator LEDs configuration.
+    // Okuma [boyut 3, sinif 0x07, komut 0x95], yazma [3, 0x07, 0x15].
+    // Bayt sirasi LED 1, LED 2, LED 3. 0 kapali, 1 pil, 2 baglanti, 3 yoklama, 4 DPI kademesi.
+    // Boyut 1 olan 0x07/0x95 dusuk guc durumudur; bu komutla karismasin diye boyut 3'tur.
+    public const byte LedOff = 0;
+    public const byte LedBatteryLevel = 1;
+    public const byte LedConnectionQuality = 2;
+    public const byte LedPollingRate = 3;
+    public const byte LedDpiStage = 4;
+
+    public static async Task<(byte[]? Modes, byte Status)> GetIndicatorLedsAsync(HidWin.Device device, int budgetMs = 800)
+    {
+        var reply = await RequestAsync(device, MakeReport(0x03, 0x07, 0x95, [0x00, 0x00, 0x00]), budgetMs);
+        // Butce dolunca son tampon doner; yanki ve boyut tutmuyorsa bu uc LED cevabi degildir.
+        // Eski dongle'in boyut 1 olan 0x95 cevabi da burada elenir.
+        if (!IsSuccess(reply[0]) || reply[5] != 0x03 || reply[6] != 0x07 || reply[7] != 0x95)
+        {
+            return (null, reply[0]);
+        }
+
+        var modes = new[] { reply[8], reply[9], reply[10] };
+        for (int i = 0; i < modes.Length; i++)
+        {
+            if (modes[i] > LedDpiStage)
+            {
+                return (null, reply[0]);
+            }
+        }
+
+        return (modes, reply[0]);
+    }
+
+    public static async Task<byte> SetIndicatorLedsAsync(HidWin.Device device, byte[] modes)
+    {
+        if (modes.Length != 3)
+        {
+            throw new ArgumentException("Uc LED modu gereklidir.");
+        }
+
+        for (int i = 0; i < modes.Length; i++)
+        {
+            if (modes[i] > LedDpiStage)
+            {
+                throw new ArgumentException("LED modu 0 ile 4 arasinda olmalidir.");
+            }
+        }
+
+        var reply = await RequestAsync(device, MakeReport(0x03, 0x07, 0x15, modes));
+        return reply[0];
+    }
+
     // Yazilim surumu. Synapse getExtendedFirmwareVersion: [boyut 4, sinif 0x00, komut 0x87].
     // Dock (dongle) surumu getDockExtendedFirmwareVersion: [4, 0x00, 0x93].
     // Yanit: major.minor.internal.reserved.
