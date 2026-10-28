@@ -273,7 +273,41 @@
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
     </Style>
 
-    <!-- Ayri kutucuklu segment (1 mm / 2 mm / 3 mm, LED) -->
+    <!-- V3 cubuk dongle: secili dugme dolu yesil, yazi koyu. Yuzey mesafesi DeepSegRadio'da kalir. -->
+    <Style x:Key="LedChoiceRadio" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>
+        <Setter Property="FontSize" Value="14"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Margin" Value="5,0"/>
+        <Setter Property="Height" Value="46"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type RadioButton}">
+                    <Border x:Name="Bd" CornerRadius="23" BorderThickness="1" BorderBrush="#2A3036" Background="#1A1E22">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#242A30"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#3A424A"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#44D62C"/>
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="#44D62C"/>
+                            <Setter Property="Foreground" Value="#141816"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Ayri kutucuklu segment (1 mm / 2 mm / 3 mm) -->
     <Style x:Key="DeepSegRadio" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{StaticResource Text2Brush}"/>
         <Setter Property="FontFamily" Value="{StaticResource UiFont}"/>

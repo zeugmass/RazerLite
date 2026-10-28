@@ -82,6 +82,8 @@ public partial class MainWindow : Window
 
         // Sag sutun: gorunen son cihaz karti sol sutunun boyuna kadar uzasin.
         var visibility = DependencyPropertyDescriptor.FromProperty(VisibilityProperty, typeof(UIElement));
+        // Kart gizlenince dongle/sarj gorseli bir sonraki gosterimde gecis yapmadan dogru haliyle acilir.
+        DongleLedPanel.IsVisibleChanged += (_, e) => _stickArtShown &= (bool)e.NewValue;
         foreach (var card in DeviceCards)
         {
             visibility.AddValueChanged(card, (_, _) => UpdateDeviceCardFill());
@@ -2589,7 +2591,25 @@ public partial class MainWindow : Window
         }
         else
         {
-            PaintLed(StickLed, dark ? null : ClassicLedColor(), 40);
+            var stickColor = dark ? null : ClassicLedColor();
+            PaintLed(StickLed, stickColor, 40);
+            // Sonukken gri nokta cizilmez; gorseldeki bos (karanlik) isik deligi gorunur.
+            StickLed.Visibility = stickColor is null ? Visibility.Hidden : Visibility.Visible;
+            // Sarjdayken kablo fareye takili gorsel gosterilir. Kart ekrandayken yumusak gecis yapilir;
+            // kart yeni aciliyorsa eski gorsel hic gorunmeden dogrudan dogru gorselle gelir.
+            if (_stickArtShown && DongleLedPanel.IsVisible)
+            {
+                StickDongleDetached.BeginAnimation(OpacityProperty,
+                    new System.Windows.Media.Animation.DoubleAnimation(dark ? 1 : 0, TimeSpan.FromMilliseconds(250)));
+            }
+            else
+            {
+                StickDongleDetached.BeginAnimation(OpacityProperty, null);
+                StickDongleDetached.Opacity = dark ? 1 : 0;
+                _stickArtShown = true;
+            }
+            // Sarj notu acilip kapaninca dugmeler kayar; kart boyu degismese de cizim yeniden yerlesir.
+            Dispatcher.BeginInvoke(LayoutStickDongle, System.Windows.Threading.DispatcherPriority.Loaded);
         }
 
         bool wired = _device?.Info.Mode == HidWin.LinkMode.Wired;
@@ -2634,6 +2654,47 @@ public partial class MainWindow : Window
                 Log("DONGLE LINK -> " + ex.Message);
             }
         }
+    }
+
+    // razer_dongle_mid_empty.png, kenar cizgileri kirpilmis hali (1944x1200): isik deligi perspektiften yatay elips,
+    // merkez (1324, 461), ~36x22 px. LED delikten biraz genis cizilir ki koyu kenar gorunmesin.
+    // Dongle kablo dahil y 100..1080 arasinda; govdenin sag ucu ve tozu x ~1640'ta biter.
+    private bool _stickArtShown;
+    private const double StickArtW = 1944, StickArtH = 1200, StickLedX = 1324, StickLedY = 461, StickLedW = 40, StickLedH = 26;
+
+    /// <summary>
+    /// Gorsel kartin boyunu belirlemez: baslik ile dugmeler arasina payli sigar ve sola yaslanir (kablo sol kenardan cikar). LED ayni olcekle isik deliginin ustune konur.
+    /// </summary>
+    private void StickDongleArt_SizeChanged(object sender, SizeChangedEventArgs e) => LayoutStickDongle();
+
+    private void LayoutStickDongle()
+    {
+        double w = StickDongleArt.ActualWidth, h = StickDongleArt.ActualHeight;
+        double top = LedHint.TranslatePoint(new Point(0, LedHint.ActualHeight), StickDongleArt).Y;
+        // Sarj notu gorunurken cizim notun ustunde biter
+        var below = LedChargingNote.Visibility == Visibility.Visible ? (FrameworkElement)LedChargingNote : LedClassicPanel;
+        double bottom = below.TranslatePoint(new Point(0, 0), StickDongleArt).Y;
+        if (w <= 0 || h <= 0 || bottom <= top)
+        {
+            return;
+        }
+
+        // Govde (gorselde y 105..905) bos alanin ~%72'si kadar; dongle kablosu gorselin sol alt kenarindan cikar,
+        // o yuzden gorsel kartin sol kenarina yaslanir ve kablo karttan disari uzaniyor gibi durur.
+        double s = Math.Min(w / 2400, (bottom - top) * 0.72 / 800);
+        double ox = -8 * s;
+        double oy = (top + bottom) / 2 - 520 * s;
+        StickDongleFrame.Width = StickArtW * s;
+        StickDongleFrame.Height = StickArtH * s;
+        Canvas.SetLeft(StickDongleFrame, ox);
+        Canvas.SetTop(StickDongleFrame, oy);
+        StickLed.Width = StickLedW * s;
+        StickLed.Height = StickLedH * s;
+        Canvas.SetLeft(StickLed, ox + (StickLedX - StickLedW / 2) * s);
+        Canvas.SetTop(StickLed, oy + (StickLedY - StickLedH / 2) * s);
+        StickBgImage.Width = w;
+        StickBgImage.Height = h;
+        StickDongleArt.Clip = new RectangleGeometry(new Rect(0, 0, w, h), 16, 16);
     }
 
     /// <summary>Isik: renk varsa parlayan nokta, yoksa sonuk gri.</summary>

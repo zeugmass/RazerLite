@@ -23,7 +23,9 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="razerlite.ico" />
-    <Resource Include="Assets\dongle_hyperpolling.png" />
+    <Resource Include="Assets\razer_background.png" />
+    <Resource Include="Assets\razer_dongle_mid_empty.png" />
+    <Resource Include="Assets\razer_mouse_same_bg_plugged.png" />
   </ItemGroup>
   <ItemGroup>
     <!-- Hz Testi araci exe'nin icine gomulur; tiklaninca %TEMP%\RazerLite'a cikarilip acilir (tek dosya dagitim). -->
