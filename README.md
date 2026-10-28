@@ -1,4 +1,4 @@
-# RazerLite 0.25
+# RazerLite 0.26
 
 Razer HyperPolling Wireless Dongle (`1532:00B3`) ve DeathAdder V3 Pro / Viper V3 Pro için
 Synapse'siz DPI / polling rate aracı. Tek dosya `RazerLite.exe`, Windows HID API (`HidD_SetFeature`) üzerinden konuşur;
@@ -31,17 +31,17 @@ kablo takılıyken kaydetmek kablosuz hızın üzerine yazmaz.
 Sürüm tek yerde tutulur: `src/RazerLite.csproj` içindeki `<Version>`. Başlıktaki, menüdeki ve Hakkında'daki sürüm
 yazıları buradan okunur.
 
-1. `<Version>`'ı yeni sürüme çek (ör. `0.25.0`), commit'le ve pushla.
+1. `<Version>`'ı yeni sürüme çek (ör. `0.26.0`), commit'le ve pushla.
 2. Aynı sürümle bir etiket pushla:
    ```
-   git tag v0.25.0
-   git push origin v0.25.0
+   git tag v0.26.0
+   git push origin v0.26.0
    ```
 3. GitHub Actions ([.github/workflows/release.yml](.github/workflows/release.yml)) exe'yi etiketteki sürümle derler,
-   `RazerLite v0.25.0` adlı bir release oluşturur ve `RazerLite.exe`'yi ekler. Sürüm notları commit'lerden üretilir;
+   `RazerLite v0.26.0` adlı bir release oluşturur ve `RazerLite.exe`'yi ekler. Sürüm notları commit'lerden üretilir;
    istersen release sayfasından düzenleyebilirsin.
 
-`-` içeren etiketler (ör. `v0.25.0-beta`) ön sürüm olarak işaretlenir ve programdaki denetimde görünmez.
+`-` içeren etiketler (ör. `v0.26.0-beta`) ön sürüm olarak işaretlenir ve programdaki denetimde görünmez.
 Exe imzasız olduğu için Windows SmartScreen ilk açılışta uyarı verebilir.
 
 ## Arayüz
