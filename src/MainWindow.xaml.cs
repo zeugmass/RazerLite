@@ -2298,7 +2298,7 @@ public partial class MainWindow : Window
     private static string LedHintText(byte mode) => mode switch
     {
         Protocol.LedConnection => "Cihaz bağlıyken sürekli beyaz yanar.",
-        Protocol.LedBattery => "Pile göre yeşil (%100), sarı (%66), turuncu (%33), kırmızı (%0).",
+        Protocol.LedBattery => "Pile göre yeşil (%100), sarı (%50), turuncu (%25), kırmızı (%0).",
         Protocol.LedWarning => "Normalde kapalı. Şarj gerekirken kırmızı yanıp söner.",
         _ => "",
     };
@@ -2463,25 +2463,44 @@ public partial class MainWindow : Window
     // Dongle cizimi: isiklar secilen moda ve cihazin o anki durumuna gore renklenir
     // ------------------------------------------------------------------
 
-    // Cubuk dongle: baglanti beyaz, pil %100 / %66 / %33 / %0.
+    // Cubuk dongle: baglanti beyaz. Pil yesil, sari, turuncu ve kirmizi arasinda kayar.
     private static readonly Color LedWhite = Color.FromRgb(0xF2, 0xF4, 0xF5);
-    private static readonly Color LedGreen = Color.FromRgb(0x44, 0xD6, 0x2C);
-    private static readonly Color LedYellow = Color.FromRgb(0xFF, 0xFF, 0x00);
-    private static readonly Color LedOrange = Color.FromRgb(0xF7, 0x94, 0x1D);
     private static readonly Color LedRed = Color.FromRgb(0xFF, 0x00, 0x00);
 
     /// <summary>Fare sarjda (kablo takili veya pil sarj oluyor): dongle isigi soner.</summary>
     private bool DongleLedsDark =>
         _device?.Info.Mode == HidWin.LinkMode.Wired || _lastBattery?.Charging == true;
 
-    /// <summary>Pil rengi: %100 yesil, %66 sari, %33 turuncu, %0 kirmizi; en yakin esik secilir.</summary>
-    private static Color BatteryLedColor(int percent) => percent switch
+    /// <summary>
+    /// Cubuk pil isigi. %100 yesil, %50 sari, %25 turuncu, %0 kirmizi; arasi duz kayar.
+    /// %65 #B3FF00, %66 #ADFF00.
+    /// </summary>
+    private static Color BatteryLedColor(int percent)
     {
-        >= 83 => LedGreen,
-        >= 50 => LedYellow,
-        >= 17 => LedOrange,
-        _ => LedRed,
-    };
+        percent = Math.Clamp(percent, 0, 100);
+        int red;
+        int green;
+        if (percent >= 50)
+        {
+            var factor = (100 - percent) / 50d;
+            red = (int)Math.Round(255 * factor, MidpointRounding.AwayFromZero);
+            green = 255;
+        }
+        else if (percent >= 25)
+        {
+            var factor = (50 - percent) / 25d;
+            red = 255;
+            green = (int)Math.Round(255 - (90 * factor), MidpointRounding.AwayFromZero);
+        }
+        else
+        {
+            var factor = (25 - percent) / 25d;
+            red = 255;
+            green = (int)Math.Round(165 * (1 - factor), MidpointRounding.AwayFromZero);
+        }
+
+        return Color.FromRgb((byte)red, (byte)green, 0);
+    }
 
     /// <summary>Pil isigi Synapse onizlemesi: %0 kirmizi, %50 sari, %100 yesil; arasi duz gecis.</summary>
     private static Color TrioBatteryLedColor(int percent)

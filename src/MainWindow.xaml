@@ -869,7 +869,7 @@
             </Viewbox>
             <StackPanel VerticalAlignment="Center">
                 <TextBlock Text="Dongle LED" Style="{StaticResource DeepTitle}"/>
-                <TextBlock x:Name="LedHint" d:Text="Pile göre yeşil (%100), sarı (%66), turuncu (%33), kırmızı (%0)." Style="{StaticResource DeepSub}" TextWrapping="Wrap" TextTrimming="None"/>
+                <TextBlock x:Name="LedHint" d:Text="Pile göre yeşil (%100), sarı (%50), turuncu (%25), kırmızı (%0)." Style="{StaticResource DeepSub}" TextWrapping="Wrap" TextTrimming="None"/>
             </StackPanel>
         </DockPanel>
         <!-- V3 cubuk dongle: razer_background.png'nin orta kesiti kartin tamamini kaplar, dongle sahnesi ustune erir.

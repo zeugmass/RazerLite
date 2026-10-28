@@ -1,4 +1,4 @@
-# v0.26.0 gibi bir etiket pushlaninca RazerLite.exe'yi derler ve GitHub release'ine ekler.
+# v0.27.0 gibi bir etiket pushlaninca RazerLite.exe'yi derler ve GitHub release'ine ekler.
 # Programdaki "Guncellemeleri denetle" bu release'leri okur (Updater.cs).
 name: Release
 
