@@ -203,8 +203,9 @@ internal static class Protocol
                     device.ExtendedPolling = true;
                 }
 
-                CodeToPoll.TryGetValue(reply[9], out var hz);
-                return (CodeToPoll.ContainsKey(reply[9]) ? hz : null, reply[9], reply[0]);
+                // BUSY/TIMEOUT paketindeki bayt guncel hiz degildir; 2000/4000 gibi okunup kayda gecmesin.
+                int? hz = reply[0] == 0x02 && CodeToPoll.TryGetValue(reply[9], out var parsed) ? parsed : null;
+                return (hz, reply[9], reply[0]);
             }
 
             // NOT_SUPPORTED: bu cihaz klasik polling komutunu kullanir.
@@ -215,8 +216,8 @@ internal static class Protocol
             device,
             MakeReport(0x01, 0x00, 0x85, [0x00]));
 
-        ClassicCodeToPoll.TryGetValue(classic[8], out var chz);
-        return (ClassicCodeToPoll.ContainsKey(classic[8]) ? chz : null, classic[8], classic[0]);
+        int? chz = classic[0] == 0x02 && ClassicCodeToPoll.TryGetValue(classic[8], out var parsedClassic) ? parsedClassic : null;
+        return (chz, classic[8], classic[0]);
     }
 
     private static async Task<(int? Hz, byte Raw, byte Status)> SetPollingClassicAsync(

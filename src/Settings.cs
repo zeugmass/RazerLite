@@ -10,10 +10,10 @@ public sealed class Profile
     public string Name { get; set; } = "";
     public int Dpi { get; set; } = 800;
 
-    /// <summary>Kablolu yoklama (Synapse pollingRate). 125 / 500 / 1000.</summary>
+    /// <summary>Kablolu yoklama. Klasik farede 125/500/1000; DeathAdder V4 Pro kabloda 8000'e kadar.</summary>
     public int Hz { get; set; } = 1000;
 
-    /// <summary>Kablosuz yoklama (Synapse pollingRateWireless). Kablo takiliyken bu alana yazilmaz.</summary>
+    /// <summary>Kablosuz yoklama. Kablo takiliyken kaydetmek bu alani degistirmez.</summary>
     public int HzWireless { get; set; } = 1000;
 
     public int RateFor(bool wired) => wired ? Hz : HzWireless;
@@ -29,6 +29,25 @@ public sealed class Settings
     public const int MaxProfiles = 5;
 
     public List<Profile> Profiles { get; set; } = new();
+
+    /// <summary>
+    /// 0 = eski dosya (JSON'da alan yok). 1000 ustu kablolu Hz bir kez kablosuza tasinir.
+    /// 1 = DeathAdder V4 Pro kabloda 2000/4000/8000 durabilir.
+    /// </summary>
+    public int ProfileSchema { get; set; }
+
+    /// <summary>Son basariyla uygulanan profil (1..5). 0 = profil disi son Uygula.</summary>
+    public int ActiveProfile { get; set; }
+
+    /// <summary>Profil secili degilken son basarili DPI. Ayni baglantida acilista geri yazilir.</summary>
+    public int LastDpi { get; set; }
+
+    /// <summary>Profil secili degilken son basarili yoklama.</summary>
+    public int LastHz { get; set; }
+
+    /// <summary>LastHz kablolu baglantida mi kaydedildi.</summary>
+    public bool LastLinkWired { get; set; }
+
     public bool MinimizeToTray { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool ShowDebugLog { get; set; } = true;
@@ -81,16 +100,30 @@ public sealed class Settings
                         loaded.Profiles = loaded.Profiles.Take(MaxProfiles).ToList();
                     }
 
+                    // Eski dosya tek Hz tutuyordu; 1000 ustu yalnizca kablosuz olabilirdi.
+                    // DeathAdder V4 Pro kabloda da 2000/4000/8000 tutar, o yuzden bu tasima bir kez yapilir.
+                    if (loaded.ProfileSchema < 1)
+                    {
+                        foreach (var profile in loaded.Profiles)
+                        {
+                            if (profile.Hz > 1000)
+                            {
+                                if (profile.HzWireless <= 1000)
+                                {
+                                    profile.HzWireless = profile.Hz;
+                                }
+
+                                profile.Hz = 1000;
+                            }
+                        }
+
+                        loaded.ProfileSchema = 1;
+                    }
+
                     foreach (var profile in loaded.Profiles)
                     {
-                        // Eski kayit tek Hz tutuyordu. 1000'den buyugu yalnizca kablosuz hiz olabilir.
-                        if (profile.Hz > 1000)
+                        if (profile.Hz is < 125 or > 8000)
                         {
-                            if (profile.HzWireless <= 1000)
-                            {
-                                profile.HzWireless = profile.Hz;
-                            }
-
                             profile.Hz = 1000;
                         }
 
@@ -98,6 +131,21 @@ public sealed class Settings
                         {
                             profile.HzWireless = 1000;
                         }
+                    }
+
+                    if (loaded.ActiveProfile < 1 || loaded.ActiveProfile > loaded.Profiles.Count)
+                    {
+                        loaded.ActiveProfile = 0;
+                    }
+
+                    if (loaded.LastHz is < 125 or > 8000)
+                    {
+                        loaded.LastHz = 0;
+                    }
+
+                    if (loaded.LastDpi is < 100 or > 45000)
+                    {
+                        loaded.LastDpi = 0;
                     }
 
                     if (loaded.LowBatteryPercent is < 5 or > 50)
@@ -114,7 +162,7 @@ public sealed class Settings
             // Bozuk ayar dosyasi: varsayilanlarla devam et.
         }
 
-        return new Settings();
+        return new Settings { ProfileSchema = 1 };
     }
 
     public void Save()

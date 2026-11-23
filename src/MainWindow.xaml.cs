@@ -39,6 +39,8 @@ public partial class MainWindow : Window
     private bool _batteryBusyLogged;  // arka plan pil okumasinda BUSY spam'ini onle
     private bool _forceReconnect;     // uyku/uyanma sonrasi handle olmus olabilir; path ayni olsa bile yeniden ac
     private int _resumeRetries;       // uyanma sonrasi cihaz henuz yoksa kac kez daha denenecek
+    private int _autoRestoreAttempts; // bu baglantida kayitli profil/ayar bir kez geri yazilir
+    private long _pollingRestartTick; // Hz yazimi cihazi yeniden numaralandirir; o baglanti geri yukleme dongusu kurmasin
     private int? _lowBatteryWarnedAt; // son uyarinin yapildigi %; sarj/yukselince sifirlanir
     private DeviceProbe.Result? _probe; // son baglantidaki salt-okuma tarama (tanilama raporu icin)
     private bool _lowBatteryDeferLogged;
@@ -78,7 +80,9 @@ public partial class MainWindow : Window
 
         InitTrayAndHotkeys();
         SyncSettingsUi();
-        RefreshProfileUi();
+        int activeSlot = _settings.ActiveProfile;
+        int? active = activeSlot >= 1 && activeSlot <= _settings.Profiles.Count ? activeSlot - 1 : null;
+        RefreshProfileUi(active);
 
         // Sag sutun: gorunen son cihaz karti sol sutunun boyuna kadar uzasin.
         var visibility = DependencyPropertyDescriptor.FromProperty(VisibilityProperty, typeof(UIElement));
@@ -138,8 +142,8 @@ public partial class MainWindow : Window
         Cursor = busy ? Cursors.Wait : Cursors.Arrow;
     }
 
-    /// <summary>Kablo aktif baglantiyken yalnizca kablolu Hz okunur ve yazilir.</summary>
-    private bool WiredLink => _device?.ExtendedPolling == false;
+    /// <summary>Kablo takiliyken kablolu Hz, dongle ve kablosuzda kablosuz Hz.</summary>
+    private bool WiredLink => _device?.Info.Mode == HidWin.LinkMode.Wired;
 
     private int SelectedHz()
     {
@@ -331,6 +335,11 @@ public partial class MainWindow : Window
         {
             SetBusy(false);
         }
+
+        if (_linkReady)
+        {
+            await RestoreSavedSettingsAsync();
+        }
     }
 
     private void EnterWaitingState()
@@ -365,6 +374,11 @@ public partial class MainWindow : Window
         _lastBattery = null;
         _linkQuality = null;
         _lowBatteryWarnedAt = null;
+        if (Environment.TickCount64 - _pollingRestartTick > 8000)
+        {
+            _autoRestoreAttempts = 0;
+        }
+
         UpdateTrayToolTip();
     }
 
@@ -528,6 +542,14 @@ public partial class MainWindow : Window
 
         _resumeRetries = 0;
         Log($"DEVICE CHANGE -> baglaniyor: {HidWin.Describe(HidWin.PidFromPath(best)).Title}");
+        // Hz yazimi dongle'i yeniden numaralandirir. O olay kayitli profili tekrar tekrar yazmasin.
+        bool pollingRestart = _pollingRestartTick != 0 && Environment.TickCount64 - _pollingRestartTick < 8000;
+        _pollingRestartTick = 0;
+        if (!pollingRestart)
+        {
+            _autoRestoreAttempts = 0;
+        }
+
         await ConnectAsync();
     }
 
@@ -1325,12 +1347,22 @@ public partial class MainWindow : Window
         }
 
         _settings.Profiles.RemoveAt(idx);
+        int removed = idx + 1;
+        if (_settings.ActiveProfile == removed)
+        {
+            _settings.ActiveProfile = 0;
+        }
+        else if (_settings.ActiveProfile > removed)
+        {
+            _settings.ActiveProfile--;
+        }
+
         _settings.Save();
         Log($"PROFIL SILINDI -> {p.Name}");
         RefreshProfileUi();
     }
 
-    private async Task ApplyProfileAsync(int slot, string source)
+    private async Task ApplyProfileAsync(int slot, string source, bool quiet = false)
     {
         if (slot < 1 || slot > _settings.Profiles.Count)
         {
@@ -1351,12 +1383,85 @@ public partial class MainWindow : Window
         SelectHz(profileHz);
         RefreshProfileUi(slot - 1);
 
-        await ApplyAsync();
+        await ApplyAsync(quiet);
 
-        if (_lastDpi == p.Dpi && _lastHz == profileHz)
+        if (!quiet && _lastDpi == p.Dpi && _lastHz == profileHz)
         {
             _tray?.Balloon(AppTitle, $"{p.Name} uygulandı: {p.Dpi} DPI · {profileHz} Hz");
         }
+    }
+
+    /// <summary>
+    /// Fare acilista onboard bellegindeki hizla uyanir (V4 Pro'da sikca 2000 veya 4000).
+    /// Son uygulanan profil veya son Uygula, baglanti hazir olunca bir kez yeniden yazilir.
+    /// </summary>
+    private async Task RestoreSavedSettingsAsync()
+    {
+        if (_autoRestoreAttempts >= 1 || _device is null || _busy)
+        {
+            return;
+        }
+
+        _autoRestoreAttempts = 1;
+
+        int slot = _settings.ActiveProfile;
+        if (slot >= 1 && slot <= _settings.Profiles.Count)
+        {
+            var p = _settings.Profiles[slot - 1];
+            int hz = p.RateFor(WiredLink);
+            RefreshProfileUi(slot - 1);
+            if (_lastDpi == p.Dpi && _lastHz == hz)
+            {
+                Log($"PROFIL {slot} -> fare zaten {p.Name}: {p.Dpi} DPI / {hz} Hz");
+                return;
+            }
+
+            Log($"PROFIL {slot} -> acilista geri yukleniyor ({p.Name}: {p.Dpi} DPI / {hz} Hz)");
+            await ApplyProfileAsync(slot, "acilista", quiet: true);
+            return;
+        }
+
+        if (_settings.LastHz > 0
+            && _settings.LastDpi > 0
+            && _settings.LastLinkWired == WiredLink
+            && (_lastDpi != _settings.LastDpi || _lastHz != _settings.LastHz))
+        {
+            Log($"SON AYAR -> acilista geri yukleniyor ({_settings.LastDpi} DPI / {_settings.LastHz} Hz)");
+            DpiBox.Text = _settings.LastDpi.ToString();
+            SelectHz(_settings.LastHz);
+            await ApplyAsync(quiet: true);
+        }
+    }
+
+    private void RememberSuccessfulApply(int dpi, int hz)
+    {
+        bool wired = WiredLink;
+        int slot = 0;
+        if (ProfileBox.SelectedItem is ComboBoxItem { Tag: int idx } && idx < _settings.Profiles.Count)
+        {
+            var p = _settings.Profiles[idx];
+            if (p.Dpi == dpi && p.RateFor(wired) == hz)
+            {
+                slot = idx + 1;
+            }
+        }
+
+        if (_settings.ActiveProfile == slot
+            && _settings.LastDpi == dpi
+            && _settings.LastHz == hz
+            && _settings.LastLinkWired == wired)
+        {
+            return;
+        }
+
+        _settings.ActiveProfile = slot;
+        _settings.LastDpi = dpi;
+        _settings.LastHz = hz;
+        _settings.LastLinkWired = wired;
+        _settings.Save();
+        Log(slot > 0
+            ? $"PROFIL {slot} -> sonraki acilista geri yuklenecek"
+            : $"SON AYAR -> sonraki acilista geri yuklenecek ({dpi} DPI / {hz} Hz)");
     }
 
     // ------------------------------------------------------------------
@@ -2890,6 +2995,11 @@ public partial class MainWindow : Window
             }
 
             _batteryTimer.Interval = _linkReady ? TimeSpan.FromSeconds(120) : TimeSpan.FromSeconds(3);
+            if (_linkReady)
+            {
+                await RestoreSavedSettingsAsync();
+            }
+
             return;
         }
 
@@ -3257,7 +3367,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ApplyAsync()
+    private async Task ApplyAsync(bool quiet = false)
     {
         if (_device is null || _busy)
         {
@@ -3266,11 +3376,15 @@ public partial class MainWindow : Window
 
         if (!int.TryParse(DpiBox.Text.Trim(), out var dpi) || dpi is < 100 or > 45000)
         {
-            MessageBox.Show(
-                "DPI 100 ile 45000 arasinda olmalidir.",
-                AppTitle,
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            if (!quiet)
+            {
+                MessageBox.Show(
+                    "DPI 100 ile 45000 arasinda olmalidir.",
+                    AppTitle,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
             return;
         }
 
@@ -3298,6 +3412,7 @@ public partial class MainWindow : Window
 
             StatusText.Text = $"Polling {hz} Hz uygulaniyor...";
             Log($"POLLING SET -> {hz} Hz");
+            _pollingRestartTick = Environment.TickCount64;
             var pollResult = await Protocol.SetPollingAsync(_device, hz, Log);
             Log($"POLLING READBACK -> {HzText(pollResult)}");
 
@@ -3307,6 +3422,7 @@ public partial class MainWindow : Window
                 StatusText.Text = $"Polling {hz} Hz tekrar deneniyor...";
                 Log($"POLLING RETRY -> okunan {got} Hz, hedef {hz} Hz; komut tekrarlaniyor");
                 await Task.Delay(300);
+                _pollingRestartTick = Environment.TickCount64;
                 pollResult = await Protocol.SetPollingAsync(_device, hz, Log);
                 Log($"POLLING READBACK -> {HzText(pollResult)}");
             }
@@ -3342,6 +3458,11 @@ public partial class MainWindow : Window
             {
                 CurrentText.Text = $"Mevcut: {verifyDpi.X} DPI · {verifyPoll.Hz} Hz";
                 bool matches = verifyDpi.X == dpi && verifyPoll.Hz == hz;
+                if (matches)
+                {
+                    RememberSuccessfulApply(dpi, hz);
+                }
+
                 StatusText.Text = matches ? "Basariyla uygulandi" : "Uygulanamadı — fare meşguldü, tekrar dene";
                 Log("========================================");
                 Log(matches ? "APPLY SUCCESS" : "APPLY FAILED -> hedef ile okunan deger farkli (fare hareket ediyordu?)");
@@ -3368,11 +3489,14 @@ public partial class MainWindow : Window
             Log("APPLY ERROR");
             Log(ex.Message);
             Log("========================================");
-            MessageBox.Show(
-                ex.Message + "\n\nDetaylari Debug / Device Log alaninda gorebilirsiniz.",
-                AppTitle,
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            if (!quiet)
+            {
+                MessageBox.Show(
+                    ex.Message + "\n\nDetaylari Debug / Device Log alaninda gorebilirsiniz.",
+                    AppTitle,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
         finally
         {
