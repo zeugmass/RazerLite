@@ -268,7 +268,7 @@ internal static class Autostart
                     File.Delete(backup);
                 }
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 backup = InstalledExe + ".old-" + Environment.ProcessId;
             }

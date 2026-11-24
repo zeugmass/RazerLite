@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -243,14 +242,32 @@ internal static class Updater
         }
         catch (Exception ex) when (allowElevate && Autostart.IsAccessDenied(ex))
         {
-            LaunchElevatedReplace(newExe);
+            // Masaustu, Indirilenler veya Program Files calisan exe'nin adini degistirmeye izin vermez.
+            // Indirilen dosya kendini Program Files'a kurar; bu klasore yazmaya gerek kalmaz.
+            LaunchDownloaded(newExe);
             return;
         }
 
+        Launch(Environment.ProcessPath!, UpdatedArg);
+    }
+
+    /// <summary>Kilit birakilir, indirilen exe acilir. O exe Program Files kopyasini guncelleyip kendisi kapanir.</summary>
+    private static void LaunchDownloaded(string newExe)
+    {
+        if (!File.Exists(newExe))
+        {
+            throw new InvalidOperationException("İndirilen güncelleme dosyası bulunamadı.");
+        }
+
+        Launch(newExe, "");
+    }
+
+    private static void Launch(string exe, string args)
+    {
         App.ReleaseSingleInstance();
         try
         {
-            if (Process.Start(new ProcessStartInfo(Environment.ProcessPath!, UpdatedArg) { UseShellExecute = false }) is null)
+            if (Process.Start(new ProcessStartInfo(exe, args) { UseShellExecute = false }) is null)
             {
                 throw new InvalidOperationException("Yeni sürüm başlatılamadı.");
             }
@@ -259,36 +276,6 @@ internal static class Updater
         {
             App.ReacquireSingleInstance();
             throw;
-        }
-    }
-
-    /// <summary>Program Files kopyasi yonetici ister. Bu surec kapanir; yonetici surec dosyayi degistirip yenisini acar.</summary>
-    private static void LaunchElevatedReplace(string newExe)
-    {
-        var current = Environment.ProcessPath ?? throw new InvalidOperationException("Program yolu bulunamadı.");
-        try
-        {
-            using var elevated = Process.Start(new ProcessStartInfo
-            {
-                FileName = current,
-                UseShellExecute = true,
-                Verb = "runas",
-                Arguments = $"{ApplyUpdateArg} \"{newExe}\"",
-            });
-            if (elevated is null)
-            {
-                throw new InvalidOperationException("Güncelleme için yönetici izni alınamadı.");
-            }
-
-            elevated.WaitForExit();
-            if (elevated.ExitCode != 0)
-            {
-                throw new InvalidOperationException("Güncelleme yönetici izniyle de kurulamadı.");
-            }
-        }
-        catch (Win32Exception)
-        {
-            throw new InvalidOperationException("Güncelleme iptal edildi. Program Files içine yazmak için yönetici izni gerekir.");
         }
     }
 
@@ -304,9 +291,9 @@ internal static class Updater
                 File.Delete(old);
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Onceki .old hâlâ kilitli. Calisan exe'yi baska bir ada cek.
+            // Onceki .old kilitli veya klasor silmeye izin vermiyor. Calisan exe baska bir ada cekilir.
             old = current + ".old-" + Environment.ProcessId;
         }
 

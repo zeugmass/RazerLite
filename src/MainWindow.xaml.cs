@@ -1158,11 +1158,15 @@ public partial class MainWindow : Window
         {
             _exiting = false;
             _installingUpdate = false;
-            Log("UPDATE ERROR -> " + ex.Message);
+            Log("UPDATE ERROR -> " + ex.Message + " @ " + Environment.ProcessPath);
             UpdateStatusText.Text = "Güncelleme yapılamadı: " + ex.Message;
             UpdateInstallText.Text = "İndir ve yeniden başlat";
             UpdateInstallButton.IsEnabled = true;
             UpdateCheckButton.IsEnabled = true;
+            MessageBox.Show(
+                this,
+                "Güncelleme kurulamadı.\n\n" + ex.Message,
+                AppTitle, MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
