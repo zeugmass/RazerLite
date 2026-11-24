@@ -1021,6 +1021,7 @@ public partial class MainWindow : Window
 
     private Updater.Release? _availableUpdate;
     private bool _updateBusy;
+    private bool _installingUpdate;
 
     /// <summary>Acilista: ayar aciksa ve son denetimden 20 saat gectiyse sessizce denetle.</summary>
     private void MaybeAutoCheckForUpdate()
@@ -1034,7 +1035,7 @@ public partial class MainWindow : Window
 
     private async Task CheckForUpdateAsync(bool manual)
     {
-        if (_updateBusy)
+        if (_updateBusy || _installingUpdate)
         {
             return;
         }
@@ -1085,7 +1086,10 @@ public partial class MainWindow : Window
         finally
         {
             _updateBusy = false;
-            UpdateCheckButton.IsEnabled = true;
+            if (!_installingUpdate)
+            {
+                UpdateCheckButton.IsEnabled = true;
+            }
         }
     }
 
@@ -1110,40 +1114,55 @@ public partial class MainWindow : Window
 
     private async void UpdateInstallButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_availableUpdate is not { } release || _updateBusy)
+        if (_availableUpdate is not { } release || _installingUpdate)
         {
             return;
         }
 
+        // MessageBox mesaj dongusunu acar; bayrak dialogdan once konmazsa ikinci tiklama
+        // ayni indirmeyi bastan baslatir.
+        _installingUpdate = true;
+        UpdateInstallButton.IsEnabled = false;
+        UpdateCheckButton.IsEnabled = false;
+
         var answer = MessageBox.Show(
+            this,
             $"RazerLite {release.Tag} indirilip kurulacak ve program yeniden açılacak.\n\nDevam edilsin mi?",
             AppTitle, MessageBoxButton.YesNo, MessageBoxImage.Question);
         if (answer != MessageBoxResult.Yes)
         {
+            _installingUpdate = false;
+            UpdateInstallButton.IsEnabled = release.AssetUrl is not null;
+            UpdateCheckButton.IsEnabled = true;
             return;
         }
 
-        _updateBusy = true;
-        UpdateInstallButton.IsEnabled = false;
-        UpdateCheckButton.IsEnabled = false;
         try
         {
-            var progress = new Progress<int>(p => UpdateInstallText.Text = $"İndiriliyor… %{p}");
+            var progress = new Progress<int>(p =>
+            {
+                if (!_exiting)
+                {
+                    UpdateInstallText.Text = $"İndiriliyor… %{p}";
+                }
+            });
             var path = await Updater.DownloadAsync(release, progress);
             Log($"UPDATE -> {release.Tag} indirildi ve dogrulandi, yeniden baslatiliyor");
             UpdateInstallText.Text = "Yeniden başlatılıyor…";
-            Updater.ReplaceAndRestart(path);
             _exiting = true;
-            Close();
+            Updater.ReplaceAndRestart(path);
+            Application.Current.Shutdown();
+            Environment.Exit(0);
         }
         catch (Exception ex)
         {
+            _exiting = false;
+            _installingUpdate = false;
             Log("UPDATE ERROR -> " + ex.Message);
             UpdateStatusText.Text = "Güncelleme yapılamadı: " + ex.Message;
             UpdateInstallText.Text = "İndir ve yeniden başlat";
             UpdateInstallButton.IsEnabled = true;
             UpdateCheckButton.IsEnabled = true;
-            _updateBusy = false;
         }
     }
 

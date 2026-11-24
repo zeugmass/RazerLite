@@ -26,7 +26,8 @@ internal static class Updater
 
     private static HttpClient CreateClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+        // Indirme 30 sn'de bitmeyebilir (exe ~70 MB). Sure siniri cagri bazinda verilir.
+        var client = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
         client.DefaultRequestHeaders.UserAgent.ParseAdd($"RazerLite/{AppInfo.VersionText}");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
@@ -35,7 +36,8 @@ internal static class Updater
     /// <summary>En son release; hic release yoksa null.</summary>
     public static async Task<Release?> GetLatestAsync()
     {
-        using var response = await Client.GetAsync(LatestApi);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var response = await Client.GetAsync(LatestApi, cts.Token);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             return null;
@@ -47,7 +49,7 @@ internal static class Updater
         }
 
         response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token));
         var root = doc.RootElement;
 
         var tag = root.GetProperty("tag_name").GetString() ?? "";
@@ -127,25 +129,73 @@ internal static class Updater
         var dir = Path.Combine(Path.GetTempPath(), "RazerLite-update");
         Directory.CreateDirectory(dir);
         var target = Path.Combine(dir, $"RazerLite-{release.Version}.exe");
-
-        using (var response = await Client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead))
+        if (File.Exists(target))
         {
-            response.EnsureSuccessStatusCode();
-            long total = response.Content.Headers.ContentLength ?? release.AssetSize;
-            await using var input = await response.Content.ReadAsStreamAsync();
-            await using var output = File.Create(target);
-            var buffer = new byte[81920];
-            long done = 0;
-            int read;
-            while ((read = await input.ReadAsync(buffer)) > 0)
+            try
             {
-                await output.WriteAsync(buffer.AsMemory(0, read));
-                done += read;
-                if (total > 0)
+                Verify(target, release);
+                progress?.Report(100);
+                return target;
+            }
+            catch
+            {
+                try
                 {
-                    progress?.Report((int)(done * 100 / total));
+                    File.Delete(target);
+                }
+                catch
+                {
+                    // Yarim veya kilitli dosya: yeni bir ada indir.
                 }
             }
+        }
+
+        var partial = target + ".partial";
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+            using (var response = await Client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cts.Token))
+            {
+                response.EnsureSuccessStatusCode();
+                long total = response.Content.Headers.ContentLength ?? release.AssetSize;
+                await using var input = await response.Content.ReadAsStreamAsync(cts.Token);
+                await using var output = File.Create(partial);
+                var buffer = new byte[81920];
+                long done = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer, cts.Token)) > 0)
+                {
+                    await output.WriteAsync(buffer.AsMemory(0, read), cts.Token);
+                    done += read;
+                    if (total > 0)
+                    {
+                        progress?.Report((int)Math.Min(100, done * 100 / total));
+                    }
+                }
+            }
+
+            if (File.Exists(target))
+            {
+                File.Delete(target);
+            }
+
+            File.Move(partial, target);
+        }
+        catch
+        {
+            try
+            {
+                if (File.Exists(partial))
+                {
+                    File.Delete(partial);
+                }
+            }
+            catch
+            {
+                // gecici dosya kalirsa bir sonraki deneme yeni partial acar
+            }
+
+            throw;
         }
 
         Verify(target, release);
@@ -188,23 +238,71 @@ internal static class Updater
         var current = Environment.ProcessPath ?? throw new InvalidOperationException("Program yolu bulunamadı.");
         var old = current + ".old";
 
-        if (File.Exists(old))
+        try
         {
-            File.Delete(old);
+            if (File.Exists(old))
+            {
+                File.Delete(old);
+            }
+        }
+        catch (IOException)
+        {
+            // Onceki .old hâlâ kilitli. Calisan exe'yi baska bir ada cek.
+            old = current + ".old-" + Environment.ProcessId;
         }
 
         File.Move(current, old);
         try
         {
-            File.Move(newExe, current);
+            PlaceFile(newExe, current);
         }
         catch
         {
-            File.Move(old, current); // geri al
+            PlaceFile(old, current); // geri al
             throw;
         }
 
-        Process.Start(new ProcessStartInfo(current, UpdatedArg) { UseShellExecute = false });
+        // Yeni surec tek-ornek kilidini hemen alsin. Eski surec kapanmadan once birakilir;
+        // aksi halde yeni kopya bekleyip bu pencereyi geri getiriyor.
+        App.ReleaseSingleInstance();
+        try
+        {
+            if (Process.Start(new ProcessStartInfo(current, UpdatedArg) { UseShellExecute = false }) is null)
+            {
+                throw new InvalidOperationException("Yeni sürüm başlatılamadı.");
+            }
+        }
+        catch
+        {
+            App.ReacquireSingleInstance();
+            throw;
+        }
+    }
+
+    /// <summary>Ayni diskte tasir. Temp baska surucudeyse kopyalar.</summary>
+    private static void PlaceFile(string source, string destination)
+    {
+        try
+        {
+            if (File.Exists(destination))
+            {
+                File.Delete(destination);
+            }
+
+            File.Move(source, destination);
+        }
+        catch (IOException)
+        {
+            File.Copy(source, destination, overwrite: true);
+            try
+            {
+                File.Delete(source);
+            }
+            catch
+            {
+                // Kaynak temp'te kalabilir; kurulum hedefi yerinde.
+            }
+        }
     }
 
     /// <summary>Onceki guncellemeden kalan ".old" dosyasini siler (yeni surec acilinca).</summary>
@@ -213,9 +311,27 @@ internal static class Updater
         try
         {
             var current = Environment.ProcessPath;
-            if (current is not null && File.Exists(current + ".old"))
+            if (current is null)
             {
-                File.Delete(current + ".old");
+                return;
+            }
+
+            var dir = Path.GetDirectoryName(current);
+            if (string.IsNullOrEmpty(dir))
+            {
+                return;
+            }
+
+            foreach (var path in Directory.EnumerateFiles(dir, Path.GetFileName(current) + ".old*"))
+            {
+                try
+                {
+                    File.Delete(path);
+                }
+                catch
+                {
+                    // Eski surec henuz dosyayi birakmamis olabilir.
+                }
             }
         }
         catch

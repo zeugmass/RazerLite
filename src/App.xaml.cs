@@ -34,18 +34,22 @@ public partial class App : Application
         };
 
         // Tek ornek: ikinci kopya acilirsa ilk kopyanin penceresini one getir ve cik.
-        // Guncelleme sonrasi (--updated) eski surec kilidi birakana kadar bekle; o kapanirken biz aciliyoruz.
+        // Guncelleme (--updated) eski surec kilidi birakana kadar bekler. Kilit
+        // createdNew ile degil WaitOne ile alinir; birakilan kilit hemen devralinir.
         bool afterUpdate = e.Args.Any(a => string.Equals(a, Updater.UpdatedArg, StringComparison.OrdinalIgnoreCase));
-        _singleInstance = new Mutex(initiallyOwned: true, MutexName, out bool isFirst);
-        for (int wait = 0; !isFirst && afterUpdate && wait < 50; wait++)
+        _singleInstance = new Mutex(initiallyOwned: false, MutexName);
+        bool owned;
+        try
         {
-            _singleInstance.Dispose();
-            Thread.Sleep(300);
-            _singleInstance = new Mutex(initiallyOwned: true, MutexName, out isFirst);
+            owned = _singleInstance.WaitOne(afterUpdate ? TimeSpan.FromSeconds(20) : TimeSpan.Zero);
+        }
+        catch (AbandonedMutexException)
+        {
+            owned = true;
         }
 
         _showEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ShowEventName);
-        if (!isFirst)
+        if (!owned)
         {
             _showEvent.Set();
             Shutdown();
@@ -89,9 +93,49 @@ public partial class App : Application
         _showListener.Start();
     }
 
+    /// <summary>Yeni surum sureci acilmadan hemen once cagrilir. Kilit bizde kalirsa yeni kopya acilamaz.</summary>
+    public static void ReleaseSingleInstance()
+    {
+        if (Current is not App app)
+        {
+            return;
+        }
+
+        var mutex = app._singleInstance;
+        app._singleInstance = null;
+        mutex?.Dispose();
+    }
+
+    /// <summary>Yeni surec acilamazsa kilidi geri al; pencere acik kalsin.</summary>
+    public static void ReacquireSingleInstance()
+    {
+        if (Current is not App app || app._singleInstance is not null)
+        {
+            return;
+        }
+
+        Mutex? mutex = null;
+        try
+        {
+            mutex = new Mutex(initiallyOwned: false, MutexName);
+            if (!mutex.WaitOne(TimeSpan.Zero))
+            {
+                mutex.Dispose();
+                return;
+            }
+
+            app._singleInstance = mutex;
+        }
+        catch (AbandonedMutexException)
+        {
+            app._singleInstance = mutex;
+        }
+    }
+
     private void App_Exit(object sender, ExitEventArgs e)
     {
         _showEvent?.Dispose();
         _singleInstance?.Dispose();
+        _singleInstance = null;
     }
 }
