@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
@@ -16,6 +17,7 @@ internal static class Updater
 {
     public const string AssetName = "RazerLite.exe";
     public const string UpdatedArg = "--updated";
+    public const string ApplyUpdateArg = "--apply-update";
 
     private static readonly string LatestApi = $"https://api.github.com/repos/{AppInfo.Owner}/{AppInfo.Repo}/releases/latest";
     private static readonly string DownloadPrefix = $"https://github.com/{AppInfo.Owner}/{AppInfo.Repo}/releases/download/";
@@ -233,7 +235,64 @@ internal static class Updater
     /// Calisan exe'yi yenisiyle degistirir ve yeni sureci baslatir. Cagiran program hemen kapanmalidir;
     /// yeni surec UpdatedArg ile eski surecin tek-ornek kilidini birakmasini bekler.
     /// </summary>
-    public static void ReplaceAndRestart(string newExe)
+    public static void ReplaceAndRestart(string newExe, bool allowElevate = true)
+    {
+        try
+        {
+            ReplaceInPlace(newExe);
+        }
+        catch (Exception ex) when (allowElevate && Autostart.IsAccessDenied(ex))
+        {
+            LaunchElevatedReplace(newExe);
+            return;
+        }
+
+        App.ReleaseSingleInstance();
+        try
+        {
+            if (Process.Start(new ProcessStartInfo(Environment.ProcessPath!, UpdatedArg) { UseShellExecute = false }) is null)
+            {
+                throw new InvalidOperationException("Yeni sürüm başlatılamadı.");
+            }
+        }
+        catch
+        {
+            App.ReacquireSingleInstance();
+            throw;
+        }
+    }
+
+    /// <summary>Program Files kopyasi yonetici ister. Bu surec kapanir; yonetici surec dosyayi degistirip yenisini acar.</summary>
+    private static void LaunchElevatedReplace(string newExe)
+    {
+        var current = Environment.ProcessPath ?? throw new InvalidOperationException("Program yolu bulunamadı.");
+        try
+        {
+            using var elevated = Process.Start(new ProcessStartInfo
+            {
+                FileName = current,
+                UseShellExecute = true,
+                Verb = "runas",
+                Arguments = $"{ApplyUpdateArg} \"{newExe}\"",
+            });
+            if (elevated is null)
+            {
+                throw new InvalidOperationException("Güncelleme için yönetici izni alınamadı.");
+            }
+
+            elevated.WaitForExit();
+            if (elevated.ExitCode != 0)
+            {
+                throw new InvalidOperationException("Güncelleme yönetici izniyle de kurulamadı.");
+            }
+        }
+        catch (Win32Exception)
+        {
+            throw new InvalidOperationException("Güncelleme iptal edildi. Program Files içine yazmak için yönetici izni gerekir.");
+        }
+    }
+
+    private static void ReplaceInPlace(string newExe)
     {
         var current = Environment.ProcessPath ?? throw new InvalidOperationException("Program yolu bulunamadı.");
         var old = current + ".old";
@@ -259,22 +318,6 @@ internal static class Updater
         catch
         {
             PlaceFile(old, current); // geri al
-            throw;
-        }
-
-        // Yeni surec tek-ornek kilidini hemen alsin. Eski surec kapanmadan once birakilir;
-        // aksi halde yeni kopya bekleyip bu pencereyi geri getiriyor.
-        App.ReleaseSingleInstance();
-        try
-        {
-            if (Process.Start(new ProcessStartInfo(current, UpdatedArg) { UseShellExecute = false }) is null)
-            {
-                throw new InvalidOperationException("Yeni sürüm başlatılamadı.");
-            }
-        }
-        catch
-        {
-            App.ReacquireSingleInstance();
             throw;
         }
     }

@@ -1,6 +1,9 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows;
 using Microsoft.Win32;
 
 namespace RazerLite;
@@ -177,9 +180,30 @@ internal static class Autostart
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string ValueName = "RazerLite";
     public const string MinimizedArg = "--minimized";
+    public const string InstallArg = "--install";
 
-    private static string Command =>
-        $"\"{Environment.ProcessPath}\" {MinimizedArg}";
+    /// <summary>Kalici kopya. 64 bit surecte bu C:\Program Files\RazerLite olur.</summary>
+    public static string InstallDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "RazerLite");
+
+    public static string InstalledExe => Path.Combine(InstallDirectory, "RazerLite.exe");
+
+    public static bool IsInstalledLocation(string? path = null)
+    {
+        path ??= Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        return string.Equals(Path.GetFullPath(path), Path.GetFullPath(InstalledExe), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Baslangic kaydi bu yolu gostersin: kurulu kopya varsa o, yoksa calisan exe.</summary>
+    public static string PreferredExe =>
+        File.Exists(InstalledExe) ? InstalledExe : Environment.ProcessPath ?? InstalledExe;
+
+    private static string CommandFor(string exe) => $"\"{exe}\" {MinimizedArg}";
 
     public static bool IsEnabled()
     {
@@ -197,11 +221,158 @@ internal static class Autostart
 
         if (enabled)
         {
-            key.SetValue(ValueName, Command, RegistryValueKind.String);
+            key.SetValue(ValueName, CommandFor(PreferredExe), RegistryValueKind.String);
         }
         else
         {
             key.DeleteValue(ValueName, throwOnMissingValue: false);
         }
     }
+
+    /// <summary>Baslangic aciksa kayittaki exe yolunu guncel kurulu yola ceker. Butonu kapatip acmak gerekmez.</summary>
+    public static void SyncIfEnabled()
+    {
+        if (!IsEnabled())
+        {
+            return;
+        }
+
+        var desired = CommandFor(PreferredExe);
+        using var key = Registry.CurrentUser.CreateSubKey(RunKey, writable: true);
+        if (key?.GetValue(ValueName) is string current
+            && string.Equals(current, desired, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        key?.SetValue(ValueName, desired, RegistryValueKind.String);
+    }
+
+    public static void CopyToInstallFolder(string source)
+    {
+        if (IsInstalledLocation(source))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(InstallDirectory);
+        var incoming = InstalledExe + ".incoming";
+        File.Copy(source, incoming, overwrite: true);
+        if (File.Exists(InstalledExe))
+        {
+            var backup = InstalledExe + ".old";
+            try
+            {
+                if (File.Exists(backup))
+                {
+                    File.Delete(backup);
+                }
+            }
+            catch (IOException)
+            {
+                backup = InstalledExe + ".old-" + Environment.ProcessId;
+            }
+
+            File.Move(InstalledExe, backup, overwrite: true);
+        }
+
+        File.Move(incoming, InstalledExe, overwrite: true);
+    }
+
+    /// <summary>
+    /// Masaustu veya Indirilenler'den acildiysa Program Files kopyasini gunceller ve oradan yeniden baslatir.
+    /// true: bu surec kapanmali.
+    /// </summary>
+    public static bool RelocateAndExitCurrent(IReadOnlyList<string> args)
+    {
+        var current = Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(current) || IsInstalledLocation(current))
+        {
+            SyncIfEnabled();
+            return false;
+        }
+
+        if (ShouldReplaceInstall(current) && !TryCopy(current) && !RequestElevatedCopy(current))
+        {
+            MessageBox.Show(
+                $"RazerLite bu klasöre kopyalanamadı:\n{InstallDirectory}\n\nYönetici izni verilmezse program bulunduğu yerden çalışmaya devam eder.",
+                "RazerLite",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            SyncIfEnabled();
+            return false;
+        }
+
+        if (!File.Exists(InstalledExe))
+        {
+            SyncIfEnabled();
+            return false;
+        }
+
+        var forward = string.Join(' ', args.Where(a =>
+            a.Equals(MinimizedArg, StringComparison.OrdinalIgnoreCase)
+            || a.Equals(Updater.UpdatedArg, StringComparison.OrdinalIgnoreCase)));
+        App.ReleaseSingleInstance();
+        Process.Start(new ProcessStartInfo(InstalledExe, forward) { UseShellExecute = false });
+        return true;
+    }
+
+    private static bool ShouldReplaceInstall(string source)
+    {
+        if (!File.Exists(InstalledExe))
+        {
+            return true;
+        }
+
+        var src = FileVersionInfo.GetVersionInfo(source).FileVersion;
+        var dst = FileVersionInfo.GetVersionInfo(InstalledExe).FileVersion;
+        if (Version.TryParse(src, out var sourceVersion) && Version.TryParse(dst, out var installedVersion))
+        {
+            return sourceVersion > installedVersion;
+        }
+
+        return File.GetLastWriteTimeUtc(source) > File.GetLastWriteTimeUtc(InstalledExe);
+    }
+
+    private static bool TryCopy(string source)
+    {
+        try
+        {
+            CopyToInstallFolder(source);
+            return File.Exists(InstalledExe);
+        }
+        catch (Exception ex) when (IsAccessDenied(ex))
+        {
+            return false;
+        }
+    }
+
+    private static bool RequestElevatedCopy(string source)
+    {
+        try
+        {
+            using var elevated = Process.Start(new ProcessStartInfo
+            {
+                FileName = source,
+                UseShellExecute = true,
+                Verb = "runas",
+                Arguments = $"{InstallArg} \"{source}\"",
+            });
+            if (elevated is null)
+            {
+                return false;
+            }
+
+            elevated.WaitForExit();
+            return elevated.ExitCode == 0 && File.Exists(InstalledExe);
+        }
+        catch (Win32Exception)
+        {
+            // Kullanici Yonetici izni penceresini kapatti.
+            return false;
+        }
+    }
+
+    public static bool IsAccessDenied(Exception ex) =>
+        ex is UnauthorizedAccessException || (ex is IOException && (ex.HResult & 0xFFFF) == 5);
 }

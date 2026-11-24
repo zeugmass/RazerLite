@@ -33,6 +33,11 @@ public partial class App : Application
             args.Handled = true;
         };
 
+        if (HandleHelperArgs(e.Args))
+        {
+            return;
+        }
+
         // Tek ornek: ikinci kopya acilirsa ilk kopyanin penceresini one getir ve cik.
         // Guncelleme (--updated) eski surec kilidi birakana kadar bekler. Kilit
         // createdNew ile degil WaitOne ile alinir; birakilan kilit hemen devralinir.
@@ -57,6 +62,12 @@ public partial class App : Application
         }
 
         Updater.CleanupOldExe();
+
+        if (Autostart.RelocateAndExitCurrent(e.Args))
+        {
+            Shutdown();
+            return;
+        }
 
         bool startHidden = e.Args.Any(a => string.Equals(a, Autostart.MinimizedArg, StringComparison.OrdinalIgnoreCase));
 
@@ -91,6 +102,52 @@ public partial class App : Application
             Name = "RazerLite.ShowListener",
         };
         _showListener.Start();
+    }
+
+    /// <summary>Kurulum ve yonetici guncellemesi tek-ornek kilidinden once biter; yoksa kopyalama ikinci kopya sanilip atlanir.</summary>
+    private static bool HandleHelperArgs(string[] args)
+    {
+        var installAt = Array.FindIndex(args, a => string.Equals(a, Autostart.InstallArg, StringComparison.OrdinalIgnoreCase));
+        if (installAt >= 0)
+        {
+            var source = installAt + 1 < args.Length ? args[installAt + 1] : Environment.ProcessPath;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(source))
+                {
+                    throw new InvalidOperationException("Kopyalanacak program bulunamadı.");
+                }
+
+                Autostart.CopyToInstallFolder(source);
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, RazerLite.MainWindow.AppTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+                Environment.Exit(1);
+            }
+
+            return true;
+        }
+
+        var updateAt = Array.FindIndex(args, a => string.Equals(a, Updater.ApplyUpdateArg, StringComparison.OrdinalIgnoreCase));
+        if (updateAt >= 0 && updateAt + 1 < args.Length)
+        {
+            try
+            {
+                Updater.ReplaceAndRestart(args[updateAt + 1], allowElevate: false);
+                Environment.Exit(0);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, RazerLite.MainWindow.AppTitle, MessageBoxButton.OK, MessageBoxImage.Error);
+                Environment.Exit(1);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Yeni surum sureci acilmadan hemen once cagrilir. Kilit bizde kalirsa yeni kopya acilamaz.</summary>
