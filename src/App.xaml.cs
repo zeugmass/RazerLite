@@ -160,7 +160,21 @@ public partial class App : Application
 
         var mutex = app._singleInstance;
         app._singleInstance = null;
-        mutex?.Dispose();
+        if (mutex is null)
+        {
+            return;
+        }
+
+        try
+        {
+            mutex.ReleaseMutex();
+        }
+        catch (ApplicationException)
+        {
+            // Bu is parcacigi sahibi degil; kapatmak yine de tutamagi birakir.
+        }
+
+        mutex.Dispose();
     }
 
     /// <summary>Yeni surec acilamazsa kilidi geri al; pencere acik kalsin.</summary>

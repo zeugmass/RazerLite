@@ -47,7 +47,9 @@ internal static class DeviceProbe
         // 2) Ayni PID'in diger USB arayuzleri.
         int pid = device.Pid;
         var others = HidWin.ListRazerPaths()
-            .Where(p => HidWin.PidFromPath(p) == pid && !string.Equals(p, device.Path, StringComparison.OrdinalIgnoreCase))
+            .Where(p => HidWin.PidFromPath(p) == pid
+                && !p.Contains("col", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(p, device.Path, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         foreach (var path in others)
@@ -111,6 +113,10 @@ internal static class DeviceProbe
                         HidWin.TransactionOverrides[device.Pid] = tx;
                         result.UsedFallback = true;
                         log?.Invoke($"PROBE -> transaction ID 0x{tx:X2} kullaniliyor");
+                    }
+                    else
+                    {
+                        HidWin.TransactionOverrides.Remove(device.Pid);
                     }
 
                     return true;

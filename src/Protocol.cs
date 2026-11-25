@@ -132,6 +132,23 @@ internal static class Protocol
             report[1] = tx;
         }
 
+        await device.RequestGate.WaitAsync();
+        try
+        {
+            return await SendAndReadAsync(device, report, budgetMs, resendOnTimeout);
+        }
+        finally
+        {
+            device.RequestGate.Release();
+        }
+    }
+
+    private static async Task<byte[]> SendAndReadAsync(
+        HidWin.Device device,
+        byte[] report,
+        int budgetMs,
+        bool resendOnTimeout)
+    {
         var started = Environment.TickCount64;
         byte[]? last = null;
 
@@ -156,13 +173,21 @@ internal static class Protocol
 
             if (attempt == MaxSendAttempts || Environment.TickCount64 - started >= budgetMs)
             {
-                return last;
+                return echoOk ? last : NotAnswered(last);
             }
 
             await Task.Delay(CommandGapMs);
         }
 
         return last!;
+    }
+
+    /// <summary>Baska bir komutun yaniti: durum NEW yapilir, okuyucular bu baytlari deger diye cozmesin.</summary>
+    private static byte[] NotAnswered(byte[] reply)
+    {
+        var copy = (byte[])reply.Clone();
+        copy[0] = 0x00;
+        return copy;
     }
 
     /// <summary>
@@ -316,7 +341,31 @@ internal static class Protocol
         await HidWin.ReconnectAsync(device);
         await Task.Delay(200);
 
-        return await GetPollingAsync(device);
+        var result = await GetPollingAsync(device);
+        if (log is not null)
+        {
+            await LogStoredPollingAsync(device, log);
+        }
+
+        return result;
+    }
+
+    // Profil 1 fare kapanip acildiginda yuklenen kayitli degerdir; Synapse V4 Pro'da yalnizca bunu yazip dogrular.
+    private static async Task LogStoredPollingAsync(HidWin.Device device, Action<string> log)
+    {
+        try
+        {
+            var stored = await RequestAsync(
+                device,
+                MakeReport(0x01, 0x00, 0xC0, [0x01, 0x00]));
+            log(stored[0] == 0x02 && CodeToPoll.TryGetValue(stored[9], out var hz)
+                ? $"SET stored profile: {hz} Hz"
+                : $"SET stored profile: {StatusText(stored[0])}");
+        }
+        catch (Exception ex)
+        {
+            log($"SET stored profile: read failed ({ex.Message})");
+        }
     }
 
     /// <summary>Fare hareket ettigi icin komut kabul edilmedi (butce doldu, hala BUSY).</summary>

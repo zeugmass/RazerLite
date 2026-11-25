@@ -127,6 +127,12 @@ internal static class HidWin
         /// <summary>Bu baglantida cihaz modu 3 (surucu modu) yazildi veya cihaz desteklemiyor.</summary>
         public bool DriverModeApplied { get; set; }
 
+        /// <summary>
+        /// Gonder-oku cifti bolunemez: araya baska bir komut girerse okunan yanit ona ait olur.
+        /// Adopt ile tutamak yenilense de ayni kalir.
+        /// </summary>
+        public SemaphoreSlim RequestGate { get; } = new(1, 1);
+
         public Device(SafeFileHandle handle, string path)
         {
             Handle = handle;
@@ -294,9 +300,14 @@ internal static class HidWin
         return paths;
     }
 
-    public static Device Open(int? preferPid = null)
+    public static Device Open(int? preferPid = null, bool onlyPreferred = false)
     {
         var paths = ListControlPaths(preferPid);
+        if (onlyPreferred && preferPid is int pid)
+        {
+            paths = paths.Where(p => PidFromPath(p) == pid).ToList();
+        }
+
         var errors = new List<string>();
 
         foreach (var path in paths)
@@ -308,6 +319,7 @@ internal static class HidWin
             }
 
             errors.Add($"{path} ({Marshal.GetLastWin32Error()})");
+            handle?.Dispose();
         }
 
         throw new InvalidOperationException(
@@ -351,13 +363,16 @@ internal static class HidWin
         device.Dispose();
 
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        // Kablo ve dongle birlikte takiliyken fare yeniden numaralanirken dongle hemen acilabilir.
+        // Son 2 saniyeye kadar yalnizca ayni PID kabul edilir.
+        var strictUntil = deadline.AddMilliseconds(-Math.Min(2000, timeoutMs / 2));
         Exception? last = null;
 
         while (DateTime.UtcNow < deadline)
         {
             try
             {
-                using var next = Open(preferPid);
+                using var next = Open(preferPid, onlyPreferred: DateTime.UtcNow < strictUntil);
                 var path = next.Path;
                 var handle = next.Detach();
                 device.Adopt(handle, path);

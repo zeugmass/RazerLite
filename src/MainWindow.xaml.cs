@@ -413,7 +413,8 @@ public partial class MainWindow : Window
                 // Uykuya girerken handle'i hemen birak; uyaninca taze acilir.
                 Log("POWER -> uyku / bekletme");
                 _batteryTimer.Stop();
-                if (_device is not null)
+                // Islem suruyorsa tutamak altindan kapatilmaz; uyaninca zorla yeniden baglanilir.
+                if (_device is not null && !_busy)
                 {
                     _device.Dispose();
                     _device = null;
@@ -493,10 +494,24 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_exiting)
+        {
+            return;
+        }
+
+        if (_busy)
+        {
+            // Liste okunurken bir yazma basladi; cihaz onun altindan kapatilmasin.
+            ScheduleDeviceScan(force, 1000);
+            return;
+        }
+
         var best = paths.FirstOrDefault();
 
         if (_device is not null)
         {
+            // Hz yazimindan sonra yeniden baglanma zaman asimina ugradiysa tutamak kapali kalir; yol yine listede olur.
+            force |= _device.Handle.IsClosed || _device.Handle.IsInvalid;
             bool present = paths.Any(p => string.Equals(p, _device.Path, StringComparison.OrdinalIgnoreCase));
             bool betterWired = best is not null
                 && HidWin.Describe(HidWin.PidFromPath(best)).Mode == HidWin.LinkMode.Wired
@@ -1095,6 +1110,12 @@ public partial class MainWindow : Window
 
     private void ShowUpdate(Updater.Release? release, string status)
     {
+        if (_installingUpdate)
+        {
+            // Kurulumdan once baslayan denetim simdi bitti; indirme surerken butonu yeniden acmasin.
+            return;
+        }
+
         _availableUpdate = release;
         UpdateStatusText.Text = status;
         var shown = release is null ? Visibility.Collapsed : Visibility.Visible;
@@ -1399,7 +1420,7 @@ public partial class MainWindow : Window
         }
 
         var p = _settings.Profiles[slot - 1];
-        int profileHz = p.RateFor(WiredLink);
+        int profileHz = ClampHz(p.RateFor(WiredLink), out _);
         Log($"PROFIL {slot} ({source}) -> {p.Name}: {p.Dpi} DPI / {p.RatesText}");
 
         DpiBox.Text = p.Dpi.ToString();
@@ -1431,7 +1452,7 @@ public partial class MainWindow : Window
         if (slot >= 1 && slot <= _settings.Profiles.Count)
         {
             var p = _settings.Profiles[slot - 1];
-            int hz = p.RateFor(WiredLink);
+            int hz = ClampHz(p.RateFor(WiredLink), out _);
             RefreshProfileUi(slot - 1);
             if (_lastDpi == p.Dpi && _lastHz == hz)
             {
@@ -1463,7 +1484,7 @@ public partial class MainWindow : Window
         if (ProfileBox.SelectedItem is ComboBoxItem { Tag: int idx } && idx < _settings.Profiles.Count)
         {
             var p = _settings.Profiles[idx];
-            if (p.Dpi == dpi && p.RateFor(wired) == hz)
+            if (p.Dpi == dpi && ClampHz(p.RateFor(wired), out _) == hz)
             {
                 slot = idx + 1;
             }
@@ -1995,10 +2016,7 @@ public partial class MainWindow : Window
         finally
         {
             _firmwareBusy = false;
-            if (generation == _firmwareGeneration)
-            {
-                FirmwareButton.IsEnabled = _mouseFirmware is not null || _dongleFirmware is not null;
-            }
+            FirmwareButton.IsEnabled = _device is not null && (_mouseFirmware is not null || _dongleFirmware is not null);
         }
     }
 
@@ -2143,10 +2161,7 @@ public partial class MainWindow : Window
         finally
         {
             _firmwareBusy = false;
-            if (generation == _firmwareGeneration)
-            {
-                FirmwareButton.IsEnabled = _mouseFirmware is not null || _dongleFirmware is not null;
-            }
+            FirmwareButton.IsEnabled = _device is not null && (_mouseFirmware is not null || _dongleFirmware is not null);
         }
     }
 
@@ -3007,15 +3022,7 @@ public partial class MainWindow : Window
         // birkac saniyede bir tum okumayi tekrarla; baglaninca normal pil temposuna don.
         if (!_linkReady)
         {
-            _busy = true;
-            try
-            {
-                await ReadDeviceAsync(quiet: true);
-            }
-            finally
-            {
-                _busy = false;
-            }
+            await ReadDeviceAsync(quiet: true);
 
             _batteryTimer.Interval = _linkReady ? TimeSpan.FromSeconds(120) : TimeSpan.FromSeconds(3);
             if (_linkReady)
@@ -3217,6 +3224,12 @@ public partial class MainWindow : Window
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_busy)
+        {
+            // Arka plan pil okumasi suruyor; ayni tutamakta ikinci istek yanitlari karistirir.
+            return;
+        }
+
         await ReadDeviceAsync();
     }
 
@@ -3512,6 +3525,11 @@ public partial class MainWindow : Window
             Log("APPLY ERROR");
             Log(ex.Message);
             Log("========================================");
+            if (_device is { } device && (device.Handle.IsClosed || device.Handle.IsInvalid))
+            {
+                ScheduleDeviceScan(forceReconnect: true, delayMs: 1000);
+            }
+
             if (!quiet)
             {
                 MessageBox.Show(
